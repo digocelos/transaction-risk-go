@@ -1,6 +1,6 @@
 package transaction
 
-// Transaction contém informações disponíveis no momento da análise.
+// Transaction contains the information available at analysis time.
 type Transaction struct {
 	AmountCents        int64
 	TypicalAmountCents int64
