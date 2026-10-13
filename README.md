@@ -49,45 +49,61 @@ To experiment, edit `transactions`, `targets`, the hidden layer size, the
 number of epochs or the learning rate in `cmd/demo/main.go`, then run the
 demo again.
 
-## Using the model (`cmd/predict`)
+## Scoring a Pix payment (`cmd/predict`)
+
+`predict` reads one scoring input: a JSON document that follows the
+[`pix-payer-input-v1` input contract](docs/contracts/pix-payer-input-v1.md).
+It describes a Pix payment that the payer's institution is about to send,
+together with observations about the payer account, the payer device, the
+recipient, and the recipient's Pix key. Your system collects those
+observations; the toolkit never queries DICT or any other source.
 
 ```bash
-go run ./cmd/predict
+go run ./cmd/predict docs/contracts/examples/01-complete.json
 ```
 
 ```
-Score: 0.187345
+{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416656}
 ```
 
-The program loads `model.json`, checks that it was trained with the same
-feature schema (`transaction-features-v1`), and prints the fraud score of
-one transaction. The score ranges from 0 (legitimate) to 1 (fraud). The
-repository already includes a trained `model.json`, so you can run
-`predict` without training first.
+Pass `-`, or no argument, to read the scoring input from standard input:
 
-To simulate a different transaction, edit the `tx` value in
-`cmd/predict/main.go`:
-
-```go
-tx := transaction.Transaction{
-	AmountCents:        180000, // R$ 1,800.00
-	TypicalAmountCents: 20000,  // R$ 200.00
-	RecentCount:        9,
-	NewRecipient:       true,
-	NewDevice:          true,
-}
+```bash
+go run ./cmd/predict < docs/contracts/examples/08-no-pix-key.json
 ```
 
-This is evaluation example 3 from the demo, so `predict` prints a score
-close to `0.9962`.
+The score ranges from 0 (legitimate) to 1 (fraud). It informs your
+decision but is not one: regulatory rules and operational decisions stay in
+your own systems.
 
-| Field | Meaning | Feature sent to the network |
-|-------|---------|-----------------------------|
-| `AmountCents` | Transaction amount, in cents | `AmountCents / TypicalAmountCents / 10` |
-| `TypicalAmountCents` | Customer's usual amount, in cents (must be positive) | used in the ratio above |
-| `RecentCount` | Number of recent transactions | `RecentCount / 20` |
-| `NewRecipient` | First payment to this recipient | `1` or `0` |
-| `NewDevice` | Transaction from a new device | `1` or `0` |
+`predict` validates the input, converts it to the features of
+`transaction-features-v1`, and scores them with `model.json`, which must
+have been trained with the same feature schema. The repository already
+includes a trained `model.json`, so you can run `predict` without training
+first. Standard output always holds exactly one JSON object, followed by a
+newline:
+
+| Exit code | `status` | Meaning |
+|-----------|----------|---------|
+| 0 | `scored` | The payment was scored. |
+| 2 | `invalid_input` | The document breaks the contract. `issues` lists each problem with a JSON Pointer `path`, a stable `code`, and a `message`. |
+| 3 | `insufficient_input` | The document is valid, but the model cannot score it. `blockers` lists each `path` with a `reason`: `missing`, `stale`, `no_history`, or `not_applicable`. |
+| 1 | none | Operational failure, such as an unreadable file or a missing model. Standard output is empty, and the message goes to standard error. |
+
+The model never guesses missing information. For example, a payer account
+with no settled Pix payments in the last 90 days has no typical amount, so
+the input is insufficient rather than scored with an invented value.
+
+[`docs/contracts/examples/`](docs/contracts/examples/) holds 17 scoring
+inputs, each with its expected result: start from `01-complete.json` and
+change one observation at a time. The model uses four features:
+
+| Feature | Observation | Value sent to the network |
+|---------|-------------|---------------------------|
+| Amount ratio | `pix_payment.amount_cents` and `payer_account.settled_outgoing_pix_90d.median_amount_cents` | amount / median amount / 10 |
+| Recent count | `payer_account.initiated_outgoing_pix_24h.count` | count / 20 |
+| `NewRecipient` | `recipient_person.settled_pix_from_payer_account_365d.count` | `1` if the count is 0, otherwise `0` |
+| `NewDevice` | `payer_device.settled_outgoing_pix_90d.count` | `1` if the count is 0, otherwise `0` |
 
 If `model.json` is missing, run the demo first. If you change the feature
 order or scaling in `transaction/features.go`, update `FeatureSchema` and
