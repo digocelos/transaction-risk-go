@@ -137,8 +137,8 @@ func TestPredictReadsStandardInput(t *testing.T) {
 			t.Fatalf("args %v: exit code = %d, stderr %q", args, got.code, got.stderr)
 		}
 
-		if score := output(t, got.stdout)["score"]; score != 0.18734535214416656 {
-			t.Errorf("args %v: score = %v, want 0.18734535214416656", args, score)
+		if score := output(t, got.stdout)["score"]; score != 0.18734535214416673 {
+			t.Errorf("args %v: score = %v, want 0.18734535214416673", args, score)
 		}
 	}
 }

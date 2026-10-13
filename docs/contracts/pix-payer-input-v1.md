@@ -532,7 +532,7 @@ The scaling constants and the operation order are those of `transaction-features
 
 ## 15. Complete normative example
 
-A valid scoring input with every subject present. It is also [`examples/01-complete.json`](examples/01-complete.json). Its features are the legacy values of the README's `cmd/predict` example, so its score is `0.18734535214416656`, printed as `0.187345` with six decimal places.
+A valid scoring input with every subject present. It is also [`examples/01-complete.json`](examples/01-complete.json). Its features are the legacy values of the README's `cmd/predict` example, so its score is `0.18734535214416673`, printed as `0.187345` with six decimal places.
 
 ```json
 {
@@ -710,14 +710,14 @@ Examples 02 to 08 each change one aspect of example 01, so that no two cases sha
 
 | File | Case | Status | Expected result |
 |---|---|---|---|
-| `01-complete.json` | Every subject present and known. | `scored` | Score `0.18734535214416656`. |
+| `01-complete.json` | Every subject present and known. | `scored` | Score `0.18734535214416673`. |
 | `02-dict-group-missing.json` | `recipient_pix_key.fraud_markers` is `null`: the whole DICT group is missing. | `scored` | Same score as 01, because DICT observations are not consumed. |
 | `03-dict-member-missing.json` | `recipient_pix_key.fraud_markers.mule_accounts` is `null`: one member is missing inside a known group. | `scored` | Same score as 01. |
 | `04-dict-window-missing.json` | `recipient_pix_key.fraud_markers.mule_accounts.d90` is `null`: one window is missing inside a known window counter. | `scored` | Same score as 01. |
 | `05-known-zero.json` | `payer_device.settled_outgoing_pix_90d.count` and `recipient_person.settled_pix_from_payer_account_365d.count` are a known `0`, so `NewDevice` and `NewRecipient` are `1`. | `scored` | Score `0.9961758913026726`. |
 | `06-integrator-observation-missing.json` | `payer_device.settled_outgoing_pix_90d` is `null`. | `insufficient_input` | `missing` at `/observations/payer_device/settled_outgoing_pix_90d`. |
 | `07-median-semantic-null.json` | `settled_outgoing_pix_90d` has `count` `0` and `median_amount_cents` `null`: a known, empty history. | `insufficient_input` | `no_history` at `/observations/payer_account/settled_outgoing_pix_90d/median_amount_cents`. |
-| `08-no-pix-key.json` | `recipient_key_usage` is `no_pix_key`, so `recipient_pix_key` is omitted. A manual Pix to another PSP, so `recipient_account.entry` is `null`. | `scored` | Score `0.0008914722633056809`. |
+| `08-no-pix-key.json` | `recipient_key_usage` is `no_pix_key`, so `recipient_pix_key` is omitted. A manual Pix to another PSP, so `recipient_account.entry` is `null`. | `scored` | Score `0.0008914722633056818`. |
 | `09-no-payer-device.json` | `payer_device_usage` is `no_payer_device`, so `payer_device` is omitted. | `insufficient_input` | `not_applicable` at `/pix_payment/payer_device_usage`. |
 | `10-multiple-blockers.json` | The 24-hour count is 6 minutes old, and the device observation is `null`. | `insufficient_input` | `stale` at `/observations/payer_account/initiated_outgoing_pix_24h/as_of`, then `missing` at `/observations/payer_device/settled_outgoing_pix_90d`. |
 | `11-invalid-unknown-member.json` | The device observation is misspelled `settled_outgoing_pix_90days`. | `invalid_input` | `required` at `/observations/payer_device/settled_outgoing_pix_90d`, then `unknown_member` at `/observations/payer_device/settled_outgoing_pix_90days`. |
@@ -736,12 +736,13 @@ For exit codes 0, 2, and 3, standard output holds exactly one compact JSON objec
 
 | Exit code | Status | Output |
 |---|---|---|
-| 0 | `scored` | `{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416656}` |
+| 0 | `scored` | `{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416673}` |
 | 2 | `invalid_input` | `{"status":"invalid_input","issues":[{"path":"/pix_payment/amount_cents","code":"out_of_range","message":"amount_cents must be at least 1"}]}` |
 | 3 | `insufficient_input` | `{"status":"insufficient_input","blockers":[{"path":"/pix_payment/payer_device_usage","reason":"not_applicable"}]}` |
 | 1 | None | Standard output is empty. A human-readable message goes to standard error. |
 
 - The score uses the shortest decimal representation that round-trips the binary64 value, as produced by the Go standard library's JSON encoding. No presentation rounding or fixed number of decimals is applied.
+- The score is bit-identical on every CPU architecture: prediction rounds each product before adding it, so no architecture fuses the two operations into a single rounding.
 - The four features stay available in the internal conversion result, but `cmd/predict` does not print them.
 - Exit code 1 covers operational and internal failures: an unreadable input file, a missing or invalid model, wrong command-line usage, or an internal error. It is never used for problems that belong to the input contract, which always produce exit code 2 or 3.
 

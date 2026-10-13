@@ -78,7 +78,11 @@ func (n *Network) Predict(inputs []float64) ([]float64, error) {
 			sum := layer.biases[neuron]
 
 			for input, weight := range weights {
-				sum += current[input] * weight
+				// The explicit conversion rounds the product before the
+				// addition. Without it, Go may fuse both operations into
+				// one fused multiply-add on some architectures, such as
+				// arm64, and scores would differ in their last bits.
+				sum += float64(current[input] * weight)
 			}
 
 			outputs[neuron] = sigmoid(sum)
