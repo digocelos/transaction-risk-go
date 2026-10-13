@@ -147,7 +147,41 @@ The known outcome, fraudulent or legitimate, of a past payment; it is never part
 _Avoid_: Fraud flag
 
 **Training example**:
-The information that was available for a past payment at its decision time, paired with that payment's fraud label.
+The scoring input that existed for a past Pix payment at its decision time, paired with the outcome observed later for that payment.
+
+**Training dataset**:
+A file of training examples, one per line, identified by the exact bytes it contains.
+_Avoid_: Training data, corpus
+
+**Outcome**:
+The training-only information about what happened to a past Pix payment: its fraud label, the instant up to which that label is known, and the loss.
+_Avoid_: Result, target
+
+**Label as-of time**:
+The instant up to which the dataset owner asserts that an outcome is known; it is never earlier than the payment's decision time.
+
+**Label maturity**:
+The state of a label whose label as-of time is at least 90 days after the payment's decision time, so most fraud reports for the payment already exist.
+
+**Usable example**:
+A training example that is valid, convertible by the feature schema being trained, and mature; only usable examples are used to train and evaluate.
+
+**Loss amount**:
+The part of a fraudulent Pix payment that the payer did not recover, as known at the label as-of time; zero for a legitimate payment and unknown when not established.
+
+**Group key**:
+An opaque, dataset-local key that groups related training examples for partitioning and leakage analysis; it is pseudonymous data and never a model input.
+_Avoid_: Customer ID, user ID
+
+**Partition**:
+The train, validation, or test subset of a training dataset, chosen only by decision time and two fixed boundaries.
+_Avoid_: Fold, random split
+
+**Decision threshold**:
+The score at or above which a Pix payment is predicted fraudulent, fixed before the test partition is evaluated.
+
+**Dataset fingerprint**:
+The SHA-256 digest of the exact bytes of a training dataset.
 
 ## Versions
 

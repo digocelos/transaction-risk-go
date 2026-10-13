@@ -1,0 +1,20 @@
+{
+  "dataset_report_version": "pix-training-dataset-report-v1",
+  "training_example_version": "pix-training-example-v1",
+  "feature_schema": "transaction-features-v1",
+  "label_maturity_days": 90,
+  "dataset_sha256": "88ac23aa1db218291275736d14d399fe766d975ff2efa1c6e641700fb12c5a30",
+  "dataset_bytes": 2398,
+  "records": {
+    "total": 1,
+    "usable": 1,
+    "invalid": 0,
+    "insufficient": 0,
+    "immature": 0
+  },
+  "usable_labels": {
+    "fraud": 0,
+    "legitimate": 1
+  },
+  "exclusions": []
+}
