@@ -1,4 +1,6 @@
-package pixinput
+// Package strictjson parses JSON strictly and validates decoded values,
+// collecting issues with JSON Pointer paths. It backs the input contracts.
+package strictjson
 
 import (
 	"bytes"
@@ -9,35 +11,38 @@ import (
 	"unicode/utf8"
 )
 
-// jsonKind identifies the type of a parsed JSON value.
-type jsonKind int
+// Kind identifies the type of a parsed JSON value.
+type Kind int
 
 const (
-	kindNull jsonKind = iota
-	kindBool
-	kindNumber
-	kindString
-	kindArray
-	kindObject
+	KindNull Kind = iota
+	KindBool
+	KindNumber
+	KindString
+	KindArray
+	KindObject
 )
 
-// jsonValue is a parsed JSON value. Numbers keep their raw token.
-type jsonValue struct {
-	kind    jsonKind
-	text    string
-	members map[string]*jsonValue
-	names   []string
+// Value is a parsed JSON value. Numbers keep their raw token, and Start
+// and End delimit the value's exact bytes in the parsed document.
+type Value struct {
+	Kind    Kind
+	Text    string
+	Members map[string]*Value
+	Names   []string
+	Start   int
+	End     int
 }
 
 var (
-	errInvalidJSON  = errors.New("invalid JSON")
-	errTrailingData = errors.New("trailing data")
+	ErrInvalidJSON  = errors.New("invalid JSON")
+	ErrTrailingData = errors.New("trailing data")
 )
 
 var pointerEscaper = strings.NewReplacer("~", "~0", "/", "~1")
 
-// pointer appends an escaped member name to a JSON Pointer.
-func pointer(parent, name string) string {
+// Pointer appends an escaped member name to a JSON Pointer.
+func Pointer(parent, name string) string {
 	return parent + "/" + pointerEscaper.Replace(name)
 }
 
@@ -51,13 +56,14 @@ type jsonParser struct {
 	duplicates []string
 }
 
-// parseJSON parses one JSON value. It expects valid UTF-8.
-func parseJSON(data []byte) (*jsonValue, []string, error) {
+// Parse parses one JSON value and returns it with the JSON Pointers of
+// repeated members. It expects valid UTF-8.
+func Parse(data []byte) (*Value, []string, error) {
 	p := &jsonParser{data: data}
 
 	p.skipSpace()
 	if p.pos == len(p.data) {
-		return nil, nil, errInvalidJSON
+		return nil, nil, ErrInvalidJSON
 	}
 
 	value, err := p.value()
@@ -67,7 +73,7 @@ func parseJSON(data []byte) (*jsonValue, []string, error) {
 
 	p.skipSpace()
 	if p.pos != len(p.data) {
-		return nil, nil, errTrailingData
+		return nil, nil, ErrTrailingData
 	}
 
 	return value, p.duplicates, nil
@@ -84,12 +90,26 @@ func (p *jsonParser) skipSpace() {
 	}
 }
 
-func (p *jsonParser) value() (*jsonValue, error) {
+// value parses one value and records its byte span.
+func (p *jsonParser) value() (*Value, error) {
 	p.skipSpace()
 	if p.pos == len(p.data) {
-		return nil, errInvalidJSON
+		return nil, ErrInvalidJSON
 	}
 
+	start := p.pos
+
+	value, err := p.valueAt()
+	if err != nil {
+		return nil, err
+	}
+
+	value.Start, value.End = start, p.pos
+
+	return value, nil
+}
+
+func (p *jsonParser) valueAt() (*Value, error) {
 	switch c := p.data[p.pos]; {
 	case c == '{':
 		return p.object()
@@ -97,22 +117,25 @@ func (p *jsonParser) value() (*jsonValue, error) {
 		return p.array()
 	case c == '"':
 		text, err := p.string()
-		return &jsonValue{kind: kindString, text: text}, err
+		if err != nil {
+			return nil, err
+		}
+		return &Value{Kind: KindString, Text: text}, nil
 	case c == 't':
-		return p.literal("true", kindBool)
+		return p.literal("true", KindBool)
 	case c == 'f':
-		return p.literal("false", kindBool)
+		return p.literal("false", KindBool)
 	case c == 'n':
-		return p.literal("null", kindNull)
+		return p.literal("null", KindNull)
 	case c == '-' || isDigit(c):
 		return p.number()
 	default:
-		return nil, errInvalidJSON
+		return nil, ErrInvalidJSON
 	}
 }
 
-func (p *jsonParser) object() (*jsonValue, error) {
-	object := &jsonValue{kind: kindObject, members: map[string]*jsonValue{}}
+func (p *jsonParser) object() (*Value, error) {
+	object := &Value{Kind: KindObject, Members: map[string]*Value{}}
 	p.pos++
 
 	p.skipSpace()
@@ -123,7 +146,7 @@ func (p *jsonParser) object() (*jsonValue, error) {
 	for {
 		p.skipSpace()
 		if p.pos == len(p.data) || p.data[p.pos] != '"' {
-			return nil, errInvalidJSON
+			return nil, ErrInvalidJSON
 		}
 
 		name, err := p.string()
@@ -133,7 +156,7 @@ func (p *jsonParser) object() (*jsonValue, error) {
 
 		p.skipSpace()
 		if !p.consume(':') {
-			return nil, errInvalidJSON
+			return nil, ErrInvalidJSON
 		}
 
 		member, err := p.child(name)
@@ -141,11 +164,11 @@ func (p *jsonParser) object() (*jsonValue, error) {
 			return nil, err
 		}
 
-		if _, exists := object.members[name]; exists {
+		if _, exists := object.Members[name]; exists {
 			p.duplicates = append(p.duplicates, p.pointer(name))
 		} else {
-			object.members[name] = member
-			object.names = append(object.names, name)
+			object.Members[name] = member
+			object.Names = append(object.Names, name)
 		}
 
 		p.skipSpace()
@@ -154,17 +177,17 @@ func (p *jsonParser) object() (*jsonValue, error) {
 		}
 
 		if !p.consume(',') {
-			return nil, errInvalidJSON
+			return nil, ErrInvalidJSON
 		}
 	}
 }
 
-func (p *jsonParser) array() (*jsonValue, error) {
+func (p *jsonParser) array() (*Value, error) {
 	p.pos++
 
 	p.skipSpace()
 	if p.consume(']') {
-		return &jsonValue{kind: kindArray}, nil
+		return &Value{Kind: KindArray}, nil
 	}
 
 	for index := 0; ; index++ {
@@ -174,11 +197,11 @@ func (p *jsonParser) array() (*jsonValue, error) {
 
 		p.skipSpace()
 		if p.consume(']') {
-			return &jsonValue{kind: kindArray}, nil
+			return &Value{Kind: KindArray}, nil
 		}
 
 		if !p.consume(',') {
-			return nil, errInvalidJSON
+			return nil, ErrInvalidJSON
 		}
 	}
 }
@@ -186,7 +209,7 @@ func (p *jsonParser) array() (*jsonValue, error) {
 // child parses the value of a member or array element. The path of the
 // value is kept as segments and built only when a duplicate needs it, so
 // deep nesting stays linear.
-func (p *jsonParser) child(segment string) (*jsonValue, error) {
+func (p *jsonParser) child(segment string) (*Value, error) {
 	p.segments = append(p.segments, segment)
 	value, err := p.value()
 	p.segments = p.segments[:len(p.segments)-1]
@@ -198,10 +221,10 @@ func (p *jsonParser) child(segment string) (*jsonValue, error) {
 func (p *jsonParser) pointer(name string) string {
 	path := ""
 	for _, segment := range p.segments {
-		path = pointer(path, segment)
+		path = Pointer(path, segment)
 	}
 
-	return pointer(path, name)
+	return Pointer(path, name)
 }
 
 func (p *jsonParser) string() (string, error) {
@@ -217,7 +240,7 @@ func (p *jsonParser) string() (string, error) {
 			p.pos++
 			return string(text), nil
 		case c < 0x20:
-			return "", errInvalidJSON
+			return "", ErrInvalidJSON
 		case c != '\\':
 			text = append(text, c)
 			p.pos++
@@ -226,7 +249,7 @@ func (p *jsonParser) string() (string, error) {
 
 		p.pos++
 		if p.pos == len(p.data) {
-			return "", errInvalidJSON
+			return "", ErrInvalidJSON
 		}
 
 		escape := p.data[p.pos]
@@ -252,11 +275,11 @@ func (p *jsonParser) string() (string, error) {
 			}
 			text = utf8.AppendRune(text, r)
 		default:
-			return "", errInvalidJSON
+			return "", ErrInvalidJSON
 		}
 	}
 
-	return "", errInvalidJSON
+	return "", ErrInvalidJSON
 }
 
 // escapedRune reads the hex digits of a \u escape, joining surrogate pairs.
@@ -264,24 +287,24 @@ func (p *jsonParser) string() (string, error) {
 func (p *jsonParser) escapedRune() (rune, error) {
 	first, ok := p.hex4()
 	if !ok {
-		return 0, errInvalidJSON
+		return 0, ErrInvalidJSON
 	}
 
 	switch {
 	case first >= 0xDC00 && first <= 0xDFFF:
-		return 0, errInvalidJSON
+		return 0, ErrInvalidJSON
 	case first < 0xD800 || first > 0xDBFF:
 		return first, nil
 	}
 
 	if p.pos+2 > len(p.data) || p.data[p.pos] != '\\' || p.data[p.pos+1] != 'u' {
-		return 0, errInvalidJSON
+		return 0, ErrInvalidJSON
 	}
 	p.pos += 2
 
 	second, ok := p.hex4()
 	if !ok || second < 0xDC00 || second > 0xDFFF {
-		return 0, errInvalidJSON
+		return 0, ErrInvalidJSON
 	}
 
 	return utf16.DecodeRune(first, second), nil
@@ -301,7 +324,7 @@ func (p *jsonParser) hex4() (rune, bool) {
 	return rune(value), true
 }
 
-func (p *jsonParser) number() (*jsonValue, error) {
+func (p *jsonParser) number() (*Value, error) {
 	start := p.pos
 
 	p.consume('-')
@@ -311,11 +334,11 @@ func (p *jsonParser) number() (*jsonValue, error) {
 	case p.pos < len(p.data) && isDigit(p.data[p.pos]) && p.data[p.pos] != '0':
 		p.digits()
 	default:
-		return nil, errInvalidJSON
+		return nil, ErrInvalidJSON
 	}
 
 	if p.consume('.') && !p.digits() {
-		return nil, errInvalidJSON
+		return nil, ErrInvalidJSON
 	}
 
 	if p.consume('e') || p.consume('E') {
@@ -323,11 +346,11 @@ func (p *jsonParser) number() (*jsonValue, error) {
 			p.consume('-')
 		}
 		if !p.digits() {
-			return nil, errInvalidJSON
+			return nil, ErrInvalidJSON
 		}
 	}
 
-	return &jsonValue{kind: kindNumber, text: string(p.data[start:p.pos])}, nil
+	return &Value{Kind: KindNumber, Text: string(p.data[start:p.pos])}, nil
 }
 
 // digits consumes one or more digits and reports whether it found any.
@@ -339,13 +362,13 @@ func (p *jsonParser) digits() bool {
 	return p.pos > start
 }
 
-func (p *jsonParser) literal(word string, kind jsonKind) (*jsonValue, error) {
+func (p *jsonParser) literal(word string, kind Kind) (*Value, error) {
 	if !bytes.HasPrefix(p.data[p.pos:], []byte(word)) {
-		return nil, errInvalidJSON
+		return nil, ErrInvalidJSON
 	}
 	p.pos += len(word)
 
-	return &jsonValue{kind: kind, text: word}, nil
+	return &Value{Kind: kind, Text: word}, nil
 }
 
 func (p *jsonParser) consume(c byte) bool {

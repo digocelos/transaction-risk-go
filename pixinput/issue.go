@@ -1,30 +1,30 @@
 package pixinput
 
 import (
-	"cmp"
 	"fmt"
-	"slices"
+
+	"github.com/digocelos/transaction-risk-go/internal/strictjson"
 )
 
 // Validation codes. The catalog is closed; see the pix-payer-input-v1
 // specification for the condition behind each code.
 const (
 	CodeDocumentTooLarge           = "document_too_large"
-	CodeBOMNotAllowed              = "bom_not_allowed"
-	CodeInvalidUTF8                = "invalid_utf8"
-	CodeInvalidJSON                = "invalid_json"
-	CodeTrailingData               = "trailing_data"
-	CodeWrongType                  = "wrong_type"
-	CodeDuplicateMember            = "duplicate_member"
-	CodeRequired                   = "required"
+	CodeBOMNotAllowed              = strictjson.CodeBOMNotAllowed
+	CodeInvalidUTF8                = strictjson.CodeInvalidUTF8
+	CodeInvalidJSON                = strictjson.CodeInvalidJSON
+	CodeTrailingData               = strictjson.CodeTrailingData
+	CodeWrongType                  = strictjson.CodeWrongType
+	CodeDuplicateMember            = strictjson.CodeDuplicateMember
+	CodeRequired                   = strictjson.CodeRequired
 	CodeUnsupportedContractVersion = "unsupported_contract_version"
-	CodeUnknownMember              = "unknown_member"
+	CodeUnknownMember              = strictjson.CodeUnknownMember
 	CodeMemberNotAllowed           = "member_not_allowed"
-	CodeNullNotAllowed             = "null_not_allowed"
-	CodeInvalidNumberFormat        = "invalid_number_format"
-	CodeOutOfRange                 = "out_of_range"
-	CodeInvalidFormat              = "invalid_format"
-	CodeInvalidEnumValue           = "invalid_enum_value"
+	CodeNullNotAllowed             = strictjson.CodeNullNotAllowed
+	CodeInvalidNumberFormat        = strictjson.CodeInvalidNumberFormat
+	CodeOutOfRange                 = strictjson.CodeOutOfRange
+	CodeInvalidFormat              = strictjson.CodeInvalidFormat
+	CodeInvalidEnumValue           = strictjson.CodeInvalidEnumValue
 	CodeAsOfAfterDecisionTime      = "as_of_after_decision_time"
 	CodeMedianCountMismatch        = "median_count_mismatch"
 	CodeDateAfterAsOf              = "date_after_as_of"
@@ -58,16 +58,13 @@ func (e *ValidationError) Error() string {
 
 // newValidationError sorts issues by the bytes of their path and code,
 // keeping one issue per path and code.
-func newValidationError(issues []Issue) *ValidationError {
-	sorted := slices.Clone(issues)
+func newValidationError(issues []strictjson.Issue) *ValidationError {
+	sorted := strictjson.SortIssues(issues)
 
-	slices.SortStableFunc(sorted, func(a, b Issue) int {
-		return cmp.Or(cmp.Compare(a.Path, b.Path), cmp.Compare(a.Code, b.Code))
-	})
+	converted := make([]Issue, len(sorted))
+	for i, issue := range sorted {
+		converted[i] = Issue(issue)
+	}
 
-	sorted = slices.CompactFunc(sorted, func(a, b Issue) bool {
-		return a.Path == b.Path && a.Code == b.Code
-	})
-
-	return &ValidationError{Issues: sorted}
+	return &ValidationError{Issues: converted}
 }
