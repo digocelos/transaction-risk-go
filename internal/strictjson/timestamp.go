@@ -1,11 +1,11 @@
-package pixinput
+package strictjson
 
 import "time"
 
-// parseTimestamp parses a strict RFC 3339 date-time with an explicit offset:
+// ParseTimestamp parses a strict RFC 3339 date-time with an explicit offset:
 // uppercase T and Z, seconds required, 1 to 9 fractional digits, no leap
 // second, and no -00:00 offset. The returned time keeps the received offset.
-func parseTimestamp(s string) (time.Time, bool) {
+func ParseTimestamp(s string) (time.Time, bool) {
 	if len(s) < len("2006-01-02T15:04:05Z") ||
 		s[4] != '-' || s[7] != '-' || s[10] != 'T' || s[13] != ':' || s[16] != ':' {
 		return time.Time{}, false
