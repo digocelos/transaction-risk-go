@@ -63,7 +63,7 @@ go run ./cmd/predict docs/contracts/examples/01-complete.json
 ```
 
 ```
-{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416656}
+{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416673}
 ```
 
 Pass `-`, or no argument, to read the scoring input from standard input:
