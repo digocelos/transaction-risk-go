@@ -1,0 +1,13 @@
+{
+  "status": "invalid_input",
+  "issues": [
+    {
+      "path": "/observations/payer_device/settled_outgoing_pix_90d",
+      "code": "required"
+    },
+    {
+      "path": "/observations/payer_device/settled_outgoing_pix_90days",
+      "code": "unknown_member"
+    }
+  ]
+}

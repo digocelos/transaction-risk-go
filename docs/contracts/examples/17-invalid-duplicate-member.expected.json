@@ -1,0 +1,9 @@
+{
+  "status": "invalid_input",
+  "issues": [
+    {
+      "path": "/observations/payer_account/initiated_outgoing_pix_24h/count",
+      "code": "duplicate_member"
+    }
+  ]
+}

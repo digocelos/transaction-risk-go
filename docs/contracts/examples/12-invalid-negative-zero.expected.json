@@ -1,0 +1,9 @@
+{
+  "status": "invalid_input",
+  "issues": [
+    {
+      "path": "/pix_payment/amount_cents",
+      "code": "invalid_number_format"
+    }
+  ]
+}

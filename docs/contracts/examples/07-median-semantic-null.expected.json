@@ -1,0 +1,9 @@
+{
+  "status": "insufficient_input",
+  "blockers": [
+    {
+      "path": "/observations/payer_account/settled_outgoing_pix_90d/median_amount_cents",
+      "reason": "no_history"
+    }
+  ]
+}
