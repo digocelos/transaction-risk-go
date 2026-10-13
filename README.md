@@ -6,8 +6,8 @@ An open-source Go toolkit for learning and building financial transaction fraud 
 - Go 1.27 or later
 - No external dependencies (standard library only)
 
-Run all commands from the repository root. Both programs read and write
-`model.json` relative to the current directory.
+Run all commands from the repository root. `cmd/demo` and `cmd/predict` read
+and write `model.json` relative to the current directory.
 
 ## Training the model (`cmd/demo`)
 
@@ -105,12 +105,88 @@ change one observation at a time. The model uses four features:
 | `NewRecipient` | `recipient_person.settled_pix_from_payer_account_365d.count` | `1` if the count is 0, otherwise `0` |
 | `NewDevice` | `payer_device.settled_outgoing_pix_90d.count` | `1` if the count is 0, otherwise `0` |
 
-Training datasets follow the
-[`pix-training-example-v1` training contract](docs/contracts/pix-training-example-v1.md):
-one JSON Lines record per past Pix payment, embedding its scoring input
-and the outcome observed later. Training from such a dataset is not
-implemented yet.
-
 If `model.json` is missing, run the demo first. If you change the feature
 order or scaling in `transaction/features.go`, update `FeatureSchema` and
 retrain. `predict` rejects a model trained with a different schema.
+
+## Training from a dataset (`cmd/train`)
+
+`train` trains the same 4-4-1 network from a dataset that follows the
+[`pix-training-example-v1` training contract](docs/contracts/pix-training-example-v1.md):
+one JSON Lines record per past Pix payment, embedding its scoring input
+and the outcome observed later. It evaluates the model with the contract's
+temporal evaluation protocol and writes the model and its training report.
+
+```bash
+go run ./cmd/train \
+  -dataset training/testdata/dataset.jsonl \
+  -model-output trained-model.json \
+  -report-output training-report.json \
+  -train-end 2025-12-31T23:59:59Z \
+  -validation-end 2026-02-28T23:59:59Z \
+  -seed 42 \
+  -epochs 5000 \
+  -learning-rate 1.0 \
+  -threshold 0.5
+```
+
+Every flag is required; nothing has a default. The two boundaries are
+RFC 3339 timestamps with an offset. `training/testdata/dataset.jsonl` holds
+12 small synthetic records for trying the command.
+
+`train`:
+
+1. Reads, validates, and classifies every record, and fingerprints the
+   dataset bytes with SHA-256. If any record is invalid, it reports every
+   invalid record and stops without training. Insufficient and immature
+   records are excluded and counted.
+2. Splits the other records by decision time only: train up to
+   `-train-end`, validation up to `-validation-end`, and test after it.
+3. Trains on the usable train records only, with full-batch gradient
+   descent from the initial weights given by `-seed`. The train partition
+   needs at least one usable `fraud` record and one usable `legitimate`
+   record.
+4. Scores the validation and test partitions once each and measures them
+   at `-threshold`: a score at or above it predicts fraud.
+5. Writes the training report (`pix-training-report-v1`): the
+   configuration, the dataset report with every exclusion, the partition
+   counts, the group overlap, and the validation and test metrics.
+6. Writes the model in model format version 2: the network plus its
+   provenance, which records the dataset fingerprint, the configuration,
+   and the SHA-256 of the report. See
+   [ADR 0010](docs/adr/0010-trained-models-carry-compact-provenance.md).
+
+Each file is written to a temporary file first and then renamed, so a
+failure never leaves a partial artifact. Progress, including the training
+loss, goes to standard error. Standard output holds exactly one JSON object,
+followed by a newline:
+
+| Exit code | `status` | Meaning |
+|-----------|----------|---------|
+| 0 | `trained` | The model and the report were written. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, and `report_sha256`. |
+| 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, whose `exclusions` list each problem by `line`, `path`, and `code`. Standard error repeats each problem with a message. Nothing is written. |
+| 1 | none | Operational failure, such as a missing flag, an unreadable dataset, a train partition without both labels, or a failed write. Standard output is empty, and the message goes to standard error. |
+
+To score payments with a trained model, use it as the `model.json` of the
+directory where you run `predict`.
+
+### Limitations
+
+Successful training is not production validation. The command shows that
+a dataset can be trained and evaluated reproducibly; it does not show that
+the model detects fraud. The bundled dataset is synthetic and far too small
+for its metrics to mean anything. Before relying on a model, evaluate it on
+a large, representative dataset of mature labels, and review its
+precision, recall, false positives, and missed losses against your own risk
+policy.
+
+- The model is the 4-4-1 baseline with the four features of
+  `transaction-features-v1`. Training uses the natural class distribution,
+  with no resampling or reweighting.
+- The threshold is the one you supply. The command does not choose it from
+  validation results.
+- All usable records are kept in memory, because every epoch uses the whole
+  train partition.
+- The same dataset bytes and flags produce the same model and report on the
+  same platform. Floating-point results can differ in their last bits
+  between CPU architectures, such as arm64 and amd64.
