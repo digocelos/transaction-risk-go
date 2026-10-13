@@ -105,6 +105,12 @@ change one observation at a time. The model uses four features:
 | `NewRecipient` | `recipient_person.settled_pix_from_payer_account_365d.count` | `1` if the count is 0, otherwise `0` |
 | `NewDevice` | `payer_device.settled_outgoing_pix_90d.count` | `1` if the count is 0, otherwise `0` |
 
+Training datasets follow the
+[`pix-training-example-v1` training contract](docs/contracts/pix-training-example-v1.md):
+one JSON Lines record per past Pix payment, embedding its scoring input
+and the outcome observed later. Training from such a dataset is not
+implemented yet.
+
 If `model.json` is missing, run the demo first. If you change the feature
 order or scaling in `transaction/features.go`, update `FeatureSchema` and
 retrain. `predict` rejects a model trained with a different schema.
