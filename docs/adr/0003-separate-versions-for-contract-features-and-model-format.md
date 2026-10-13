@@ -1,0 +1,3 @@
+# Separate versions for the input contract, feature schema, and model file format
+
+Three things change for different reasons: what integrators supply (input contract), how that input becomes numeric model features (feature schema), and how a trained model is serialized (model file format). Each carries its own version. A contract can therefore gain information that the current features ignore without retraining, and the file format can change without touching the features. A saved model records its feature schema and model format version, and it is loaded only by code that expects the same feature schema.

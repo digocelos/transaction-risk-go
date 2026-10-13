@@ -1,0 +1,9 @@
+{
+  "status": "insufficient_input",
+  "blockers": [
+    {
+      "path": "/pix_payment/payer_device_usage",
+      "reason": "not_applicable"
+    }
+  ]
+}

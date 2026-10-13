@@ -1,0 +1,13 @@
+{
+  "status": "insufficient_input",
+  "blockers": [
+    {
+      "path": "/observations/payer_account/initiated_outgoing_pix_24h/as_of",
+      "reason": "stale"
+    },
+    {
+      "path": "/observations/payer_device/settled_outgoing_pix_90d",
+      "reason": "missing"
+    }
+  ]
+}
