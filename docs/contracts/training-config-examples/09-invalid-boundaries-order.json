@@ -1,0 +1,24 @@
+{
+  "config_version": "pix-training-config-v1",
+  "feature_schema": "pix-risk-v1",
+  "architecture": {
+    "hidden_layers": [4],
+    "activation": "sigmoid"
+  },
+  "algorithm": "full-batch-gradient-descent",
+  "loss": "mean-squared-error",
+  "seed": 42,
+  "learning_rate": 1.0,
+  "max_epochs": 5000,
+  "boundaries": {
+    "train_end": "2026-06-12T00:00:00Z",
+    "validation_end": "2026-06-12T00:00:00Z"
+  },
+  "selection": {
+    "checkpoint": "final_epoch",
+    "threshold": {
+      "policy": "fixed",
+      "value": 0.5
+    }
+  }
+}

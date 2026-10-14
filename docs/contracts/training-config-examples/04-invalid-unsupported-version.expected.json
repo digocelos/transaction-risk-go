@@ -1,0 +1,9 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/config_version",
+      "code": "unsupported_config_version"
+    }
+  ]
+}

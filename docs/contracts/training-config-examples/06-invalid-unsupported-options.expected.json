@@ -1,0 +1,17 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/algorithm",
+      "code": "invalid_enum_value"
+    },
+    {
+      "path": "/selection/checkpoint",
+      "code": "invalid_enum_value"
+    },
+    {
+      "path": "/selection/threshold/policy",
+      "code": "invalid_enum_value"
+    }
+  ]
+}

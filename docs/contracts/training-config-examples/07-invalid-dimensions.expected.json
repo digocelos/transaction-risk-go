@@ -1,0 +1,17 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/architecture/hidden_layers/0",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/architecture/hidden_layers/1",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/architecture/hidden_layers/2",
+      "code": "invalid_number_format"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/architecture/hidden_layers",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/feature_schema",
+      "code": "invalid_enum_value"
+    }
+  ]
+}
