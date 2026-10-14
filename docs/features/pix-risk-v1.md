@@ -1,6 +1,6 @@
 # Feature schema `pix-risk-v1`
 
-**Status:** Specification, implemented by the `pixrisk` package and used by `cmd/train`. `cmd/predict` still uses `transaction-features-v1` until it migrates ([section 19](#19-breaking-migration)).
+**Status:** Specification, implemented by the `pixrisk` package and used by `cmd/train`, `cmd/evaluate`, `cmd/predict`, and the `scoring` package.
 
 ## 1. Scope
 
