@@ -12,6 +12,14 @@
     {
       "path": "/architecture/hidden_layers/2",
       "code": "invalid_number_format"
+    },
+    {
+      "path": "/learning_rate",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/max_epochs",
+      "code": "out_of_range"
     }
   ]
 }

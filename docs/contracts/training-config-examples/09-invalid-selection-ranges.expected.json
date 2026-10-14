@@ -1,0 +1,21 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/selection/checkpoint/evaluation_interval",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/selection/checkpoint/min_improvement",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/selection/early_stopping/patience",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/selection/threshold/max_false_positive_rate",
+      "code": "out_of_range"
+    }
+  ]
+}

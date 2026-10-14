@@ -22,11 +22,13 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
-// Exit codes. A dataset with invalid records always uses 2.
+// Exit codes. A dataset with invalid records always uses 2, and a
+// threshold policy that no candidate satisfies always uses 3.
 const (
-	exitTrained        = 0
-	exitFailure        = 1
-	exitInvalidDataset = 2
+	exitTrained             = 0
+	exitFailure             = 1
+	exitInvalidDataset      = 2
+	exitSelectionInfeasible = 3
 )
 
 type trainedOutput struct {
@@ -37,6 +39,13 @@ type trainedOutput struct {
 	ReportSHA256  string              `json:"report_sha256"`
 }
 
+type infeasibleOutput struct {
+	Status                            string  `json:"status"`
+	ThresholdPolicy                   string  `json:"threshold_policy"`
+	MaxFalsePositiveRate              float64 `json:"max_false_positive_rate"`
+	LowestAchievableFalsePositiveRate float64 `json:"lowest_achievable_false_positive_rate"`
+}
+
 type invalidOutput struct {
 	Status  string              `json:"status"`
 	Dataset trainingdata.Report `json:"dataset"`
@@ -44,7 +53,7 @@ type invalidOutput struct {
 
 const usage = `usage: train -config FILE -dataset FILE -model-output FILE -report-output FILE
 
-Trains the network a pix-training-config-v1 configuration describes on the
+Trains the network a pix-training-config-v2 configuration describes on the
 train partition of a pix-training-example-v2 dataset, prepared with
 pix-risk-v1, evaluates the validation and test partitions, and writes the
 model and its training report. Every flag is required.
@@ -109,6 +118,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	var invalid *training.InvalidDatasetError
 	var untrainable *training.UntrainableError
+	var requirement *training.ValidationRequirementError
+	var infeasible *evaluation.InfeasibleThresholdError
 	switch {
 	case errors.As(err, &invalid):
 		for _, d := range invalid.Diagnostics {
@@ -122,6 +133,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return write(stdout, stderr, exitInvalidDataset, invalidOutput{Status: "invalid_dataset", Dataset: invalid.Report})
 	case errors.As(err, &untrainable):
 		return fail("%v; move boundaries.train_end in the configuration or add records", untrainable)
+	case errors.As(err, &requirement):
+		return fail("%v; move the boundaries or change the selection policy", requirement)
+	case errors.As(err, &infeasible):
+		fmt.Fprintf(stderr, "train: %v; nothing was written\n", infeasible)
+		return write(stdout, stderr, exitSelectionInfeasible, infeasibleOutput{
+			Status:                            "selection_infeasible",
+			ThresholdPolicy:                   config.Threshold.Policy,
+			MaxFalsePositiveRate:              infeasible.MaxFalsePositiveRate,
+			LowestAchievableFalsePositiveRate: infeasible.LowestAchievableFalsePositiveRate,
+		})
 	case errors.Is(err, context.Canceled):
 		return fail("canceled; nothing was written")
 	case err != nil:
@@ -130,6 +151,9 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	report := result.Report
 	logPartitions(stderr, report.Dataset.Records, report.Partitions)
+	fmt.Fprintf(stderr, "train: selected epoch %d of %d trained (%s, stopped by %s); threshold %v (%s)\n",
+		report.Selection.SelectedEpoch, report.Selection.ActualEpochs, report.Selection.CheckpointPolicy,
+		report.Selection.StopReason, report.Selection.Threshold.Value, report.Selection.Threshold.Policy)
 
 	reportData, err := trainingreport.Marshal(report)
 	if err != nil {
@@ -188,7 +212,7 @@ func parse(args []string, stderr io.Writer) (options, error) {
 		fs.PrintDefaults()
 	}
 
-	fs.StringVar(&opts.config, "config", "", "pix-training-config-v1 configuration `file`")
+	fs.StringVar(&opts.config, "config", "", "pix-training-config-v2 configuration `file`")
 	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
 	fs.StringVar(&opts.modelOutput, "model-output", "", "`file` to write the trained model to")
 	fs.StringVar(&opts.reportOutput, "report-output", "", "`file` to write the training report to")

@@ -15,13 +15,19 @@
     "validation_end": "2026-06-12T00:00:00Z"
   },
   "selection": {
-    "checkpoint": "final_epoch",
+    "checkpoint": {
+      "policy": "best_validation",
+      "objective": "validation_pr_auc",
+      "evaluation_interval": 50,
+      "min_improvement": 0
+    },
+    "early_stopping": {
+      "policy": "none"
+    },
     "threshold": {
       "policy": "fixed",
       "value": 0.5
-    }
-  },
-  "early_stopping": {
-    "patience": 10
+    },
+    "test_evaluation": "skip"
   }
 }

@@ -15,3 +15,5 @@ The inference artifact therefore states which dataset bytes and configuration pr
 - `cmd/predict` accepts both formats, and its output does not change.
 - Metrics appear only in the report. Anyone holding a model checks a report against it by recomputing the report's SHA-256.
 - The report must be written before the model, because the model records the report's hash.
+
+Refined by [ADR 0015](0015-selection-uses-validation-only-and-test-is-explicit.md): the report is now `pix-training-report-v2`, and the provenance records the selected epoch and threshold.

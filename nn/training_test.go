@@ -226,3 +226,31 @@ func TestPredictRejectsNonFiniteInputs(t *testing.T) {
 		}
 	}
 }
+
+// A clone keeps the parameters of the moment it was taken.
+func TestCloneIsIndependent(t *testing.T) {
+	network := smallNetwork(t)
+	snapshot := network.Clone()
+
+	before, err := snapshot.Predict(gradientSamples[0].Inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := network.TrainBatch(gradientSamples, 0.5); err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := snapshot.Predict(gradientSamples[0].Inputs)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(before, after) {
+		t.Error("training the original changed the clone")
+	}
+
+	if !sameParameters(snapshot, clone(smallNetwork(t))) {
+		t.Error("the clone does not hold the original parameters")
+	}
+}

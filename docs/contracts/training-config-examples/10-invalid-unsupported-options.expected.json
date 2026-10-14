@@ -2,11 +2,11 @@
   "status": "invalid",
   "issues": [
     {
-      "path": "/algorithm",
+      "path": "/selection/checkpoint/objective",
       "code": "invalid_enum_value"
     },
     {
-      "path": "/selection/checkpoint",
+      "path": "/selection/test_evaluation",
       "code": "invalid_enum_value"
     },
     {

@@ -104,3 +104,21 @@ func (n *Network) Predict(inputs []float64) ([]float64, error) {
 func sigmoid(value float64) float64 {
 	return 1 / (1 + math.Exp(-value))
 }
+
+// Clone returns an independent copy of the network: training either one
+// never changes the other.
+func (n *Network) Clone() *Network {
+	copied := &Network{inputSize: n.inputSize, layers: make([]denseLayer, len(n.layers))}
+
+	for i, layer := range n.layers {
+		copied.layers[i] = denseLayer{
+			weights: make([][]float64, len(layer.weights)),
+			biases:  append([]float64(nil), layer.biases...),
+		}
+		for neuron, weights := range layer.weights {
+			copied.layers[i].weights[neuron] = append([]float64(nil), weights...)
+		}
+	}
+
+	return copied
+}
