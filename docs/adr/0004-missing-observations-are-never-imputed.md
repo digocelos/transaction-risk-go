@@ -7,3 +7,5 @@ Not applicable is not missing. A known fact that makes information not applicabl
 ## Consequences
 
 With the current four-feature schema (`transaction-features-v1`), populations such as new accounts can receive no score and must rely on the integrator's own rules. This is a known limitation of that feature schema, not a permanent property of the toolkit; later feature schemas can model absence explicitly.
+
+Amended by [ADR 0011](0011-optional-observations-carry-availability-indicators.md): from `pix-risk-v1`, only missing or stale required facts make the input insufficient; optional observations that are not available feed features with explicit availability indicators.

@@ -30,3 +30,5 @@ Local-calendar rules, such as the regulatory night period, belong to the rules l
 The DICT API defines the names, structure, types, requiredness, representation, and semantics of the data the integrator receives. The Manual complements it with operational behavior, delays, usage rules, and anything the API leaves undefined, and the Regulamento defines regulatory obligations. When the API and the Manual diverge, the contract follows the API and records the divergence in its specification.
 
 Release candidates, such as DICT API v2.13.0, and the archived `bacen/pix-dict-api` repository are not normative sources. A new DICT version requires a new contract version only when it materially changes the semantics, structure, or unit of a field the contract uses.
+
+Refined by [ADR 0012](0012-regulatory-context-can-be-a-feature.md): the integrator supplies the result of local-calendar rules and the `reference_time_offset`, from which the toolkit computes the local time of day.
