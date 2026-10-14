@@ -1,0 +1,55 @@
+{
+  "dataset_report_version": "pix-training-dataset-report-v1",
+  "training_example_version": "pix-training-example-v2",
+  "feature_schema": "pix-risk-v1",
+  "label_maturity_days": 90,
+  "dataset_sha256": "293b11bd762e865402c934328e41827b45bee10ba4a6d947c125ef0af3df7cc8",
+  "dataset_bytes": 25990,
+  "records": {
+    "total": 10,
+    "usable": 6,
+    "invalid": 2,
+    "insufficient": 1,
+    "immature": 1
+  },
+  "usable_labels": {
+    "fraud": 3,
+    "legitimate": 3
+  },
+  "exclusions": [
+    {
+      "line": 7,
+      "category": "invalid",
+      "issues": [
+        {
+          "path": "/outcome/label",
+          "code": "invalid_enum_value"
+        }
+      ]
+    },
+    {
+      "line": 8,
+      "category": "invalid",
+      "issues": [
+        {
+          "path": "/scoring_input/pix_payment/reference_time_offset",
+          "code": "invalid_format"
+        }
+      ]
+    },
+    {
+      "line": 9,
+      "category": "insufficient",
+      "blockers": [
+        {
+          "path": "/scoring_input/observations/payer_account/initiated_outgoing_pix_24h/as_of",
+          "reason": "stale"
+        }
+      ]
+    },
+    {
+      "line": 10,
+      "category": "immature"
+    }
+  ]
+}

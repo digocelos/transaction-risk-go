@@ -6,5 +6,6 @@ The versions stay separate (ADR 0003): the contract, the training example, the f
 
 ## Consequences
 
-- Inputs, datasets, and models built for version 1, including the committed `model.json`, stop working when the change lands; the migration is listed in the `pix-risk-v1` specification.
+- Inputs, datasets, and models built for version 1, including the committed `model.json`, stop working when the migration ends; the migration is listed in the `pix-risk-v1` specification.
+- During the migration, each consumer moves to version 2 in its own issue, and the decoders accept only the versions their caller states, so no command silently accepts both. Version 1 is removed with the educational workflow (#33).
 - Every later change still follows ADR 0006: a new optional member is a new contract version.

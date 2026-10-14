@@ -5,39 +5,44 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"time"
 	"unicode/utf8"
 
 	"github.com/digocelos/transaction-risk-go/internal/strictjson"
 )
 
-// Read reads one scoring input document and decodes it. It stops reading
-// as soon as the document exceeds MaxDocumentSize. A reader failure is
-// returned as is; a document that breaks the contract yields a
-// *ValidationError.
-func Read(r io.Reader) (ScoringInput, error) {
+// Read reads one scoring input document and decodes it, accepting only the
+// given contract versions. It stops reading as soon as the document exceeds
+// MaxDocumentSize. A reader failure is returned as is; a document that
+// breaks the contract yields a *ValidationError.
+func Read(r io.Reader, versions ...string) (ScoringInput, error) {
 	data, err := io.ReadAll(io.LimitReader(r, MaxDocumentSize+1))
 	if err != nil {
 		return ScoringInput{}, fmt.Errorf("read scoring input: %w", err)
 	}
 
-	return Decode(data)
+	return Decode(data, versions...)
 }
 
-// Decode validates a scoring input document and returns its typed form.
-// A document that breaks the contract yields a *ValidationError.
-func Decode(data []byte) (ScoringInput, error) {
+// Decode validates a scoring input document and returns its typed form. It
+// accepts only the given contract versions, so a document of any other
+// version is rejected with unsupported_contract_version. A document that
+// breaks the contract yields a *ValidationError.
+func Decode(data []byte, versions ...string) (ScoringInput, error) {
 	root, issues := parseDocument(data)
 	if len(issues) > 0 {
 		return ScoringInput{}, newValidationError(issues)
 	}
 
-	if issue := checkContractVersion(root); issue != nil {
+	version, issue := checkContractVersion(root, versions)
+	if issue != nil {
 		return ScoringInput{}, newValidationError([]strictjson.Issue{*issue})
 	}
 
-	d := &decoder{}
+	d := &decoder{v2: version == ContractV2}
 	input := d.scoringInput(root)
+	input.ContractVersion = version
 
 	if len(d.Issues()) > 0 {
 		return ScoringInput{}, newValidationError(d.Issues())
@@ -94,34 +99,46 @@ func parseDocument(data []byte) (*strictjson.Value, []strictjson.Issue) {
 }
 
 // checkContractVersion locates the contract version without assuming any
-// version's structure.
-func checkContractVersion(root *strictjson.Value) *strictjson.Issue {
+// version's structure, and accepts it only if it is in versions and this
+// package supports it.
+func checkContractVersion(root *strictjson.Value, versions []string) (string, *strictjson.Issue) {
 	const path = "/contract_version"
 
 	value, ok := root.Members["contract_version"]
 
 	switch {
 	case !ok:
-		return &strictjson.Issue{Path: path, Code: CodeRequired, Message: "contract_version is required"}
+		return "", &strictjson.Issue{Path: path, Code: CodeRequired, Message: "contract_version is required"}
 	case value.Kind == strictjson.KindNull:
-		return &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "contract_version must not be null"}
+		return "", &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "contract_version must not be null"}
 	case value.Kind != strictjson.KindString:
-		return &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "contract_version must be a string"}
-	case value.Text != ContractVersion:
-		return &strictjson.Issue{
+		return "", &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "contract_version must be a string"}
+	case !slices.Contains(versions, value.Text) || (value.Text != ContractV1 && value.Text != ContractV2):
+		return "", &strictjson.Issue{
 			Path:    path,
 			Code:    CodeUnsupportedContractVersion,
 			Message: fmt.Sprintf("unsupported contract version %q", value.Text),
 		}
 	}
 
-	return nil
+	return value.Text, nil
 }
 
-// decoder walks a parsed document and collects issues.
+// decoder walks a parsed document and collects issues. v2 selects the
+// pix-payer-input-v2 structure.
 type decoder struct {
 	strictjson.Validator
+	v2    bool
 	asOfs []timedMember
+}
+
+// members returns the members of an object: those of version 1, plus those
+// that version 2 adds when decoding version 2.
+func (d *decoder) members(v1 []string, v2 ...string) []string {
+	if d.v2 {
+		return append(v1, v2...)
+	}
+	return v1
 }
 
 // timedMember is a valid as_of value and its path.
@@ -176,23 +193,23 @@ func (d *decoder) scoringInput(root *strictjson.Value) ScoringInput {
 	}
 
 	return ScoringInput{
-		ContractVersion: ContractVersion,
-		DecisionTime:    decisionTime,
-		PixPayment:      payment,
-		Observations:    observations,
+		DecisionTime: decisionTime,
+		PixPayment:   payment,
+		Observations: observations,
 	}
 }
 
 func (d *decoder) pixPayment(root *strictjson.Value) PixPayment {
-	object, path := d.ObjectMember("", root, "pix_payment", false,
-		"amount_cents", "payer_device_usage", "recipient_key_usage", "recipient_person_type")
+	object, path := d.ObjectMember("", root, "pix_payment", false, d.members(
+		[]string{"amount_cents", "payer_device_usage", "recipient_key_usage", "recipient_person_type"},
+		"reference_time_offset", "payer_limit_period")...)
 	if object == nil {
 		return PixPayment{}
 	}
 
 	amount, _ := d.Integer(path, object, "amount_cents", 1, false)
 
-	return PixPayment{
+	payment := PixPayment{
 		AmountCents: amount,
 		PayerDeviceUsage: PayerDeviceUsage(d.Enum(path, object, "payer_device_usage",
 			string(PayerDevice), string(NoPayerDevice))),
@@ -201,6 +218,71 @@ func (d *decoder) pixPayment(root *strictjson.Value) PixPayment {
 		RecipientPersonType: PersonType(d.Enum(path, object, "recipient_person_type",
 			string(NaturalPerson), string(LegalPerson))),
 	}
+
+	if d.v2 {
+		payment.ReferenceTimeOffsetMinutes = d.referenceTimeOffset(path, object)
+		payment.PayerLimitPeriod = LimitPeriod(d.Enum(path, object, "payer_limit_period",
+			string(Daytime), string(Nighttime), string(Daily), string(NoPeriodLimit)))
+	}
+
+	return payment
+}
+
+// maxOffsetMinutes is the largest reference time offset, 14:00.
+const maxOffsetMinutes = 14 * 60
+
+// referenceTimeOffset reads a signed offset string ±hh:mm in minutes.
+// -00:00 is an unknown local offset and is rejected.
+func (d *decoder) referenceTimeOffset(path string, parent *strictjson.Value) int {
+	const name = "reference_time_offset"
+
+	value, memberPath, state := d.Member(path, parent, name, false)
+	if state != strictjson.Valid {
+		return 0
+	}
+
+	if value.Kind != strictjson.KindString {
+		d.Add(memberPath, CodeWrongType, "%s must be a string", name)
+		return 0
+	}
+
+	minutes, ok := parseOffset(value.Text)
+	switch {
+	case !ok:
+		d.Add(memberPath, CodeInvalidFormat, "%s must match ^[+-][0-9]{2}:[0-9]{2}$ and must not be -00:00", name)
+		return 0
+	case minutes > maxOffsetMinutes || minutes < -maxOffsetMinutes:
+		d.Add(memberPath, CodeOutOfRange, "%s must be from -14:00 to +14:00", name)
+		return 0
+	}
+
+	return minutes
+}
+
+// parseOffset parses ±hh:mm with minutes from 00 to 59, rejecting -00:00.
+func parseOffset(text string) (int, bool) {
+	if len(text) != 6 || (text[0] != '+' && text[0] != '-') || text[3] != ':' || text == "-00:00" {
+		return 0, false
+	}
+
+	for _, i := range []int{1, 2, 4, 5} {
+		if text[i] < '0' || text[i] > '9' {
+			return 0, false
+		}
+	}
+
+	hours := int(text[1]-'0')*10 + int(text[2]-'0')
+	minutes := int(text[4]-'0')*10 + int(text[5]-'0')
+	if minutes > 59 {
+		return 0, false
+	}
+
+	total := hours*60 + minutes
+	if text[0] == '-' {
+		total = -total
+	}
+
+	return total, true
 }
 
 func (d *decoder) observations(root *strictjson.Value, payment PixPayment) Observations {
@@ -211,27 +293,28 @@ func (d *decoder) observations(root *strictjson.Value, payment PixPayment) Obser
 	}
 
 	return Observations{
-		PayerAccount: d.payerAccount(path, object),
-		PayerDevice: conditionalSubject(d, path, object, "payer_device",
-			"payer_device_usage", string(payment.PayerDeviceUsage), string(PayerDevice),
+		PayerAccount: d.payerAccount(path, object, payment),
+		PayerDevice: conditionalMember(d, path, object, "payer_device",
+			"payer_device_usage", string(payment.PayerDeviceUsage), payment.PayerDeviceUsage == PayerDevice,
 			d.payerDevice),
 		RecipientPerson:  d.recipientPerson(path, object),
 		RecipientAccount: d.recipientAccount(path, object),
-		RecipientPixKey: conditionalSubject(d, path, object, "recipient_pix_key",
-			"recipient_key_usage", string(payment.RecipientKeyUsage), string(PixKey),
+		RecipientPixKey: conditionalMember(d, path, object, "recipient_pix_key",
+			"recipient_key_usage", string(payment.RecipientKeyUsage), payment.RecipientKeyUsage == PixKey,
 			d.recipientPixKey),
 	}
 }
 
-// conditionalSubject decodes a subject whose presence depends on a Pix
-// payment discriminator. The subject is required when the discriminator has
-// the applicable value and must be omitted otherwise. When the discriminator
-// is invalid (""), presence is not checked.
-func conditionalSubject[T any](
+// conditionalMember decodes a subject or observation whose presence
+// depends on a Pix payment discriminator. It is required when the
+// discriminator's value makes it applicable and must be omitted otherwise.
+// When the discriminator is invalid (""), presence is not checked.
+func conditionalMember[T any](
 	d *decoder,
 	path string,
 	parent *strictjson.Value,
-	name, discriminator, value, applicable string,
+	name, discriminator, value string,
+	applies bool,
 	decode func(string, *strictjson.Value) *T,
 ) *T {
 	_, present := parent.Members[name]
@@ -239,39 +322,83 @@ func conditionalSubject[T any](
 	switch {
 	case value == "" && !present:
 		return nil
-	case value != "" && value != applicable && present:
+	case value != "" && !applies && present:
 		d.Add(strictjson.Pointer(path, name), CodeMemberNotAllowed,
 			"%s must be omitted when %s is %s", name, discriminator, value)
 		return nil
-	case value != "" && value != applicable:
+	case value != "" && !applies:
 		return nil
 	}
 
 	return decode(path, parent)
 }
 
-func (d *decoder) payerAccount(path string, parent *strictjson.Value) PayerAccount {
-	object, subjectPath := d.ObjectMember(path, parent, "payer_account", false,
-		"settled_outgoing_pix_90d", "initiated_outgoing_pix_24h")
+func (d *decoder) payerAccount(path string, parent *strictjson.Value, payment PixPayment) PayerAccount {
+	object, subjectPath := d.ObjectMember(path, parent, "payer_account", false, d.members(
+		[]string{"settled_outgoing_pix_90d", "initiated_outgoing_pix_24h"}, "period_limit")...)
 	if object == nil {
 		return PayerAccount{}
 	}
 
-	return PayerAccount{
+	account := PayerAccount{
 		SettledOutgoingPix90d:   d.settledHistory(subjectPath, object, "settled_outgoing_pix_90d"),
 		InitiatedOutgoingPix24h: d.countObservation(subjectPath, object, "initiated_outgoing_pix_24h"),
 	}
+
+	if d.v2 {
+		account.PeriodLimit = conditionalMember(d, subjectPath, object, "period_limit",
+			"payer_limit_period", string(payment.PayerLimitPeriod), payment.PayerLimitPeriod != NoPeriodLimit,
+			d.periodLimit)
+	}
+
+	return account
 }
 
 func (d *decoder) payerDevice(path string, parent *strictjson.Value) *PayerDeviceSubject {
-	object, subjectPath := d.ObjectMember(path, parent, "payer_device", false,
-		"settled_outgoing_pix_90d")
+	object, subjectPath := d.ObjectMember(path, parent, "payer_device", false, d.members(
+		[]string{"settled_outgoing_pix_90d"}, "registration")...)
 	if object == nil {
 		return nil
 	}
 
-	return &PayerDeviceSubject{
+	device := &PayerDeviceSubject{
 		SettledOutgoingPix90d: d.countObservation(subjectPath, object, "settled_outgoing_pix_90d"),
+	}
+
+	if d.v2 {
+		device.Registration = d.registration(subjectPath, object, "registration")
+	}
+
+	return device
+}
+
+func (d *decoder) periodLimit(path string, parent *strictjson.Value) *PeriodLimit {
+	object, observationPath := d.ObjectMember(path, parent, "period_limit", true,
+		"limit_cents", "consumed_cents", "as_of")
+	if object == nil {
+		return nil
+	}
+
+	limit, _ := d.Integer(observationPath, object, "limit_cents", 0, false)
+	consumed, _ := d.Integer(observationPath, object, "consumed_cents", 0, false)
+
+	return &PeriodLimit{
+		LimitCents:    limit,
+		ConsumedCents: consumed,
+		AsOf:          d.asOfValue(observationPath, object),
+	}
+}
+
+func (d *decoder) registration(path string, parent *strictjson.Value, name string) *Registration {
+	object, observationPath := d.ObjectMember(path, parent, name, true, "status", "as_of")
+	if object == nil {
+		return nil
+	}
+
+	return &Registration{
+		Status: RegistrationStatus(d.Enum(observationPath, object, "status",
+			string(Registered), string(NotRegistered))),
+		AsOf: d.asOfValue(observationPath, object),
 	}
 }
 
@@ -293,12 +420,19 @@ func (d *decoder) recipientPerson(path string, parent *strictjson.Value) Recipie
 }
 
 func (d *decoder) recipientAccount(path string, parent *strictjson.Value) RecipientAccount {
-	object, subjectPath := d.ObjectMember(path, parent, "recipient_account", false, "entry")
+	object, subjectPath := d.ObjectMember(path, parent, "recipient_account", false, d.members(
+		[]string{"entry"}, "pre_registration")...)
 	if object == nil {
 		return RecipientAccount{}
 	}
 
-	return RecipientAccount{Entry: d.accountEntry(subjectPath, object)}
+	account := RecipientAccount{Entry: d.accountEntry(subjectPath, object)}
+
+	if d.v2 {
+		account.PreRegistration = d.registration(subjectPath, object, "pre_registration")
+	}
+
+	return account
 }
 
 func (d *decoder) recipientPixKey(path string, parent *strictjson.Value) *RecipientPixKey {

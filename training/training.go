@@ -2,7 +2,9 @@
 // pix-training-example-v1 dataset and evaluates it with the temporal
 // evaluation protocol: the network is fitted on the train partition only,
 // then the validation and test partitions are each scored once at a fixed
-// threshold. It never reads the system clock or shuffles records.
+// threshold. PrepareDataset prepares pix-training-example-v2 datasets with
+// pix-risk-v1, fitting the preparation state on the train partition only.
+// It never reads the system clock or shuffles records.
 package training
 
 import (

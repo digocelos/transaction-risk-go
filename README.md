@@ -190,3 +190,16 @@ policy.
 - The same dataset bytes and flags produce the same model and report on the
   same platform. Floating-point results can differ in their last bits
   between CPU architectures, such as arm64 and amd64.
+
+## Version 2 contracts and `pix-risk-v1`
+
+[`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) and
+[`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md)
+replace the version 1 contracts, and the feature schema
+[`pix-risk-v1`](docs/features/pix-risk-v1.md) replaces
+`transaction-features-v1`. It scores new accounts and payments without a
+Pix key, payer device, or limit per period, marking unavailable information
+with explicit indicators instead of refusing to score. The `pixrisk`
+package prepares its 62 features and fits their standardization on the
+train partition only. `cmd/train` and `cmd/predict` still use version 1
+until they migrate.

@@ -19,7 +19,7 @@ func decodeRecord(line int, data []byte, tooLarge bool, schema FeatureSchema) (R
 
 	root, issues := checkLine(line, data, tooLarge)
 	if len(issues) == 0 {
-		if issue := checkVersion(root); issue != nil {
+		if issue := checkVersion(root, schema.TrainingExampleVersion); issue != nil {
 			issues = []strictjson.Issue{*issue}
 		}
 	}
@@ -28,7 +28,7 @@ func decodeRecord(line int, data []byte, tooLarge bool, schema FeatureSchema) (R
 		return invalidRecord(record, issues), nil
 	}
 
-	d := &decoder{}
+	d := &decoder{contractVersion: schema.ContractVersion}
 	example, ok := d.example(data, root)
 
 	if !ok || len(d.Issues()) > 0 {
@@ -118,7 +118,7 @@ func checkLine(line int, data []byte, tooLarge bool) (*strictjson.Value, []stric
 
 // checkVersion locates the training example version without assuming any
 // version's structure.
-func checkVersion(root *strictjson.Value) *strictjson.Issue {
+func checkVersion(root *strictjson.Value, version string) *strictjson.Issue {
 	const path = "/training_example_version"
 
 	value, ok := root.Members["training_example_version"]
@@ -133,7 +133,7 @@ func checkVersion(root *strictjson.Value) *strictjson.Issue {
 	case value.Kind != strictjson.KindString:
 		return &strictjson.Issue{Path: path, Code: strictjson.CodeWrongType,
 			Message: "training_example_version must be a string"}
-	case value.Text != TrainingExampleVersion:
+	case value.Text != version:
 		return &strictjson.Issue{Path: path, Code: CodeUnsupportedTrainingExampleVersion,
 			Message: fmt.Sprintf("unsupported training example version %q", value.Text)}
 	}
@@ -142,8 +142,10 @@ func checkVersion(root *strictjson.Value) *strictjson.Issue {
 }
 
 // decoder applies the record structure and consistency rules.
+// contractVersion is the scoring input version that records embed.
 type decoder struct {
 	strictjson.Validator
+	contractVersion string
 }
 
 // example decodes a record whose line and version checks passed. It
@@ -193,7 +195,7 @@ func (d *decoder) scoringInput(data []byte, root *strictjson.Value) (pixinput.Sc
 		return pixinput.ScoringInput{}, false
 	}
 
-	input, err := pixinput.Decode(data[value.Start:value.End])
+	input, err := pixinput.Decode(data[value.Start:value.End], d.contractVersion)
 
 	var invalid *pixinput.ValidationError
 	if errors.As(err, &invalid) {

@@ -1,6 +1,6 @@
 # Training contract `pix-training-example-v1`
 
-**Status:** Normative for `pix-training-example-v1`. Not yet implemented.
+**Status:** Normative for `pix-training-example-v1`. Superseded by [`pix-training-example-v2`](pix-training-example-v2.md) (ADR 0013); it is still read by `cmd/train` until training migrates, and is then removed.
 
 ## 1. Scope
 

@@ -55,7 +55,7 @@ func assertWindow(t *testing.T, name string, got *WindowCounter, d90, m12, m60 i
 }
 
 func TestDecodeCompleteExample(t *testing.T) {
-	input, err := Decode(readExample(t, "01-complete.json"))
+	input, err := Decode(readExample(t, "01-complete.json"), ContractV1)
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}

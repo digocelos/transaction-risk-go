@@ -1,13 +1,18 @@
 // Package pixinput decodes and validates scoring inputs for payer-side Pix
-// analysis, as defined by the pix-payer-input-v1 input contract.
+// analysis, as defined by the pix-payer-input-v1 and pix-payer-input-v2
+// input contracts.
 package pixinput
 
 import "time"
 
+// Contract versions this package supports. Callers state which versions
+// they accept; version 2 replaces version 1 once every consumer migrates.
 const (
-	// ContractVersion is the only contract version this package supports.
-	ContractVersion = "pix-payer-input-v1"
+	ContractV1 = "pix-payer-input-v1"
+	ContractV2 = "pix-payer-input-v2"
+)
 
+const (
 	// MaxDocumentSize is the largest scoring input document, in bytes.
 	MaxDocumentSize = 65536
 )
@@ -36,7 +41,26 @@ const (
 	LegalPerson   PersonType = "LEGAL_PERSON"
 )
 
-// ScoringInput is one valid pix-payer-input-v1 document.
+// LimitPeriod is the limit period the payer's PSP applies to the payment.
+type LimitPeriod string
+
+const (
+	Daytime       LimitPeriod = "daytime"
+	Nighttime     LimitPeriod = "nighttime"
+	Daily         LimitPeriod = "daily"
+	NoPeriodLimit LimitPeriod = "no_period_limit"
+)
+
+// RegistrationStatus states whether a registration is in effect.
+type RegistrationStatus string
+
+const (
+	Registered    RegistrationStatus = "registered"
+	NotRegistered RegistrationStatus = "not_registered"
+)
+
+// ScoringInput is one valid scoring input document. Members that only
+// pix-payer-input-v2 defines are zero or nil in a version 1 input.
 type ScoringInput struct {
 	ContractVersion string
 	DecisionTime    time.Time
@@ -50,6 +74,11 @@ type PixPayment struct {
 	PayerDeviceUsage    PayerDeviceUsage
 	RecipientKeyUsage   RecipientKeyUsage
 	RecipientPersonType PersonType
+
+	// ReferenceTimeOffsetMinutes is the UTC offset, in minutes east of
+	// UTC, of the time reference the PSP uses for the payer's limit periods.
+	ReferenceTimeOffsetMinutes int
+	PayerLimitPeriod           LimitPeriod
 }
 
 // Observations groups observations by subject. A nil observation is missing.
@@ -63,14 +92,17 @@ type Observations struct {
 }
 
 // PayerAccount holds the history of the account the payment debits.
+// PeriodLimit is also nil when PayerLimitPeriod is NoPeriodLimit.
 type PayerAccount struct {
 	SettledOutgoingPix90d   *SettledHistory
 	InitiatedOutgoingPix24h *CountObservation
+	PeriodLimit             *PeriodLimit
 }
 
 // PayerDeviceSubject holds the activity of the device that authorized the payment.
 type PayerDeviceSubject struct {
 	SettledOutgoingPix90d *CountObservation
+	Registration          *Registration
 }
 
 // RecipientPerson holds the payer account's relationship with the recipient
@@ -83,9 +115,11 @@ type RecipientPerson struct {
 	Entries                        *PersonEntries
 }
 
-// RecipientAccount holds DICT entry data about the recipient account.
+// RecipientAccount holds DICT entry data about the recipient account and
+// whether a pre-registration by the payer applies to it.
 type RecipientAccount struct {
-	Entry *AccountEntry
+	Entry           *AccountEntry
+	PreRegistration *Registration
 }
 
 // RecipientPixKey holds DICT data about the Pix key that identified the recipient.
@@ -103,6 +137,20 @@ type SettledHistory struct {
 	Count             int64
 	MedianAmountCents *int64
 	AsOf              time.Time
+}
+
+// PeriodLimit is the limit in effect for the payment's limit period and the
+// amount already counted against it, excluding the payment.
+type PeriodLimit struct {
+	LimitCents    int64
+	ConsumedCents int64
+	AsOf          time.Time
+}
+
+// Registration states whether a registration is in effect at AsOf.
+type Registration struct {
+	Status RegistrationStatus
+	AsOf   time.Time
 }
 
 // CountObservation is a count over a contract-defined lookback window.
