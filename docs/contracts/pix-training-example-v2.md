@@ -242,7 +242,7 @@ Upper bounds are inclusive, as in contract-defined lookback windows. Partitions 
 
 - **Train.** The model is fitted only on the usable records of the train partition. The train partition MUST contain at least one usable `fraud` record and at least one usable `legitimate` record.
 - **Validation.** Used only to compare configurations and to choose the decision threshold. Its records never update model parameters.
-- **Test.** Evaluated exactly once, after the model, its training configuration, and the threshold are fixed. Test results MUST NOT be used to change any of them; changing anything afterwards requires a new run reported as such.
+- **Test.** Evaluated exactly once, after the model, its training configuration, and the threshold are fixed. Test results MUST NOT be used to change any of them; changing anything afterwards requires a new run reported as such. Scoring the same frozen model on the same test partition again, as an independent evaluation does ([`pix-evaluation-report-v1`](pix-evaluation-report-v1.md)), reproduces that evaluation and changes nothing. Software cannot stop a person from looking at test results repeatedly; ADR 0017 records this.
 - **No evaluation on training examples.** Metrics computed on the train partition MUST NOT be reported as evaluation results. A run MAY report training loss, labeled as training loss.
 
 ### 11.3 Threshold
