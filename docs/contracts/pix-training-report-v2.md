@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-The training report is the JSON document `cmd/train` writes next to a trained model. It records what produced the model and how it was chosen: the configuration and its identity, the dataset report, the partitions, the coverage of populations and availability states, the model selection, and the validation and test metrics. The model binds the report by the SHA-256 of its exact bytes (ADR 0010), so the report is written first.
+The training report is the JSON document `cmd/train` writes next to a trained model. It records what produced the model and how it was chosen: the configuration and its identity, the dataset report, the partitions, the coverage of populations and availability states, the model selection, and the validation and test metrics. The model artifact binds the report by the SHA-256 of its exact bytes ([`pix-risk-model-v1`](pix-risk-model-v1.md)), and both are published together in a run (ADR 0016).
 
 The report describes software behavior on the data supplied. Its metrics are not a claim of detection quality, calibration, or regulatory compliance.
 
