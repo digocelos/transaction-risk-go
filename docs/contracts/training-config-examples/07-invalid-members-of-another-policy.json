@@ -1,8 +1,8 @@
 {
-  "config_version": "pix-training-config-v1",
-  "feature_schema": "transaction-features-v1",
+  "config_version": "pix-training-config-v2",
+  "feature_schema": "pix-risk-v1",
   "architecture": {
-    "hidden_layers": [4, 4, 4, 4, 4],
+    "hidden_layers": [4],
     "activation": "sigmoid"
   },
   "algorithm": "full-batch-gradient-descent",
@@ -15,10 +15,18 @@
     "validation_end": "2026-06-12T00:00:00Z"
   },
   "selection": {
-    "checkpoint": "final_epoch",
+    "checkpoint": {
+      "policy": "final_epoch",
+      "objective": "validation_loss"
+    },
+    "early_stopping": {
+      "policy": "none"
+    },
     "threshold": {
       "policy": "fixed",
-      "value": 0.5
-    }
+      "value": 0.5,
+      "max_false_positive_rate": 0.1
+    },
+    "test_evaluation": "after_selection"
   }
 }

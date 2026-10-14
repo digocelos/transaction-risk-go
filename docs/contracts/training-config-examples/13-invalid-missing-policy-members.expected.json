@@ -1,0 +1,21 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/selection/checkpoint/evaluation_interval",
+      "code": "required"
+    },
+    {
+      "path": "/selection/checkpoint/min_improvement",
+      "code": "required"
+    },
+    {
+      "path": "/selection/checkpoint/objective",
+      "code": "required"
+    },
+    {
+      "path": "/selection/threshold/max_false_positive_rate",
+      "code": "required"
+    }
+  ]
+}

@@ -2,11 +2,11 @@
   "status": "invalid",
   "issues": [
     {
-      "path": "/architecture/dropout",
+      "path": "/selection/checkpoint/objective",
       "code": "unknown_member"
     },
     {
-      "path": "/epochs",
+      "path": "/selection/threshold/max_false_positive_rate",
       "code": "unknown_member"
     }
   ]

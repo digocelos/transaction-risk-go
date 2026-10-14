@@ -7,25 +7,35 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
 	"github.com/digocelos/transaction-risk-go/nn"
+	"github.com/digocelos/transaction-risk-go/pixrisk"
+	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 )
 
-const examplesDir = "../docs/contracts/training-examples"
+const (
+	examplesDir = "../docs/contracts/training-examples-v2"
+	configsDir  = "../docs/contracts/training-config-examples"
+)
 
-// dataset joins the three usable training examples: a legitimate payment on
-// 2026-05-14, a fraud on 2026-06-02, and a fraud with unknown loss on
-// 2026-06-18.
+// dataset joins six usable training examples: legitimate payments on May
+// 14, 20, and 25 and a fraud on June 2 (train), a fraud on June 9
+// (validation), and a fraud on June 18 (test).
 func dataset(t *testing.T) []byte {
 	t.Helper()
 
 	var data []byte
-	for _, name := range []string{"01-usable-legitimate", "02-usable-fraud", "03-unknown-loss"} {
+	for _, name := range []string{
+		"01-usable-legitimate", "04-legitimate-registered-device-pre-registered-recipient",
+		"06-legitimate-no-device-no-period-limit", "02-usable-fraud",
+		"03-fraud-registered-device-pre-registered-recipient", "05-unknown-loss-no-pix-key",
+	} {
 		line, err := os.ReadFile(filepath.Join(examplesDir, name+".jsonl"))
 		if err != nil {
 			t.Fatal(err)
@@ -36,99 +46,127 @@ func dataset(t *testing.T) []byte {
 	return data
 }
 
-// buildReport runs the dataset through the training data and evaluation
-// packages, with fixed scores standing in for a model.
-func buildReport(t *testing.T, boundaries evaluation.Boundaries) Report {
+func config(t *testing.T, name string) trainingconfig.Config {
 	t.Helper()
 
-	partitioner, err := evaluation.NewPartitioner(boundaries)
+	data, err := os.ReadFile(filepath.Join(configsDir, name))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	scores := map[int]float64{1: 0.2, 2: 0.9, 3: 0.4}
+	cfg, err := trainingconfig.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return cfg
+}
+
+// buildReport runs the dataset through the training data, preparation, and
+// evaluation packages, with fixed scores standing in for a model, as a
+// final_epoch run would report it.
+func buildReport(t *testing.T, cfg trainingconfig.Config) Report {
+	t.Helper()
+
+	partitioner, err := evaluation.NewPartitioner(cfg.Boundaries())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scores := map[int]float64{1: 0.1, 2: 0.2, 3: 0.3, 4: 0.9, 5: 0.6, 6: 0.4}
 	predictions := map[evaluation.Partition][]evaluation.Prediction{}
+	prepared := map[evaluation.Partition][]pixrisk.Prepared{}
 	var exclusions []trainingdata.Exclusion
 
-	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.TransactionFeaturesV1,
+	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.PixRiskV1,
 		func(record trainingdata.Record) error {
 			if exclusion, ok := record.Exclusion(); ok {
 				exclusions = append(exclusions, exclusion)
 			}
 
 			partition, ok := partitioner.Add(record)
-			if ok && record.Category == trainingdata.Usable {
-				example := record.Example
-				predictions[partition] = append(predictions[partition], evaluation.Prediction{
-					Score:           scores[record.Line],
-					Label:           example.Outcome.Label,
-					AmountCents:     example.ScoringInput.PixPayment.AmountCents,
-					LossAmountCents: example.Outcome.LossAmountCents,
-				})
+			if !ok || record.Category != trainingdata.Usable {
+				return nil
 			}
+
+			values, err := pixrisk.Prepare(record.Example.ScoringInput)
+			if err != nil {
+				return err
+			}
+			prepared[partition] = append(prepared[partition], values)
+
+			predictions[partition] = append(predictions[partition], evaluation.Prediction{
+				Score:           scores[record.Line],
+				Label:           record.Example.Outcome.Label,
+				AmountCents:     record.Example.ScoringInput.PixPayment.AmountCents,
+				LossAmountCents: record.Example.Outcome.LossAmountCents,
+			})
 			return nil
 		})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	validation, err := evaluation.Evaluate(predictions[evaluation.Validation], 0.5)
+	threshold := cfg.Threshold.Value
+	validation, err := evaluation.Evaluate(predictions[evaluation.Validation], threshold)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	test, err := evaluation.Evaluate(predictions[evaluation.Test], 0.5)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return Report{
-		Configuration: Configuration{
-			Algorithm:     nn.AlgorithmFullBatchGradientDescent,
-			FeatureSchema: "transaction-features-v1",
-			Seed:          42,
-			Epochs:        5000,
-			LearningRate:  1,
-			Threshold:     0.5,
+	report := Report{
+		Configuration: Configuration{Config: cfg},
+		Dataset:       trainingdata.NewReport(summary, exclusions),
+		Partitions:    partitioner.Report(),
+		Coverage:      NewCoverage(prepared[evaluation.Train], prepared[evaluation.Validation], prepared[evaluation.Test]),
+		Selection: Selection{
+			RequestedEpochs:  cfg.MaxEpochs,
+			ActualEpochs:     cfg.MaxEpochs,
+			SelectedEpoch:    cfg.MaxEpochs,
+			StopReason:       StopMaxEpochs,
+			CheckpointPolicy: cfg.Checkpoint.Policy,
+			Threshold:        ThresholdChoice{Policy: cfg.Threshold.Policy, Value: threshold},
 		},
-		Dataset:    trainingdata.NewReport(summary, exclusions),
-		Partitions: partitioner.Report(),
 		Validation: validation,
-		Test:       test,
 	}
+
+	if cfg.TestEvaluation == trainingconfig.TestAfterSelection {
+		test, err := evaluation.Evaluate(predictions[evaluation.Test], threshold)
+		if err != nil {
+			t.Fatal(err)
+		}
+		report.TestEvaluated = true
+		report.Test = &test
+	}
+
+	return report
 }
 
-var testBoundaries = evaluation.Boundaries{
-	TrainEnd:      time.Date(2026, 5, 31, 23, 59, 59, 0, time.UTC),
-	ValidationEnd: time.Date(2026, 6, 10, 23, 59, 59, 0, time.UTC),
-}
+func marshal(t *testing.T, report Report) []byte {
+	t.Helper()
 
-func TestMarshalIsDeterministic(t *testing.T) {
-	first, err := Marshal(buildReport(t, testBoundaries))
+	data, err := Marshal(report)
 	if err != nil {
 		t.Fatalf("Marshal() error = %v", err)
 	}
 
-	second, err := Marshal(buildReport(t, testBoundaries))
-	if err != nil {
-		t.Fatal(err)
-	}
+	return data
+}
 
-	if !bytes.Equal(first, second) {
+func TestMarshalIsDeterministic(t *testing.T) {
+	cfg := config(t, "01-baseline.json")
+	first := marshal(t, buildReport(t, cfg))
+
+	if second := marshal(t, buildReport(t, cfg)); !bytes.Equal(first, second) {
 		t.Error("two encodings of the same report differ")
 	}
 
-	// The same instants written with another offset produce the same bytes.
+	// The same boundaries written with another offset produce the same bytes.
 	brasilia := time.FixedZone("", -3*60*60)
-	shifted, err := Marshal(buildReport(t, evaluation.Boundaries{
-		TrainEnd:      testBoundaries.TrainEnd.In(brasilia),
-		ValidationEnd: testBoundaries.ValidationEnd.In(brasilia),
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
+	shifted := cfg
+	shifted.TrainEnd = cfg.TrainEnd.In(brasilia)
+	shifted.ValidationEnd = cfg.ValidationEnd.In(brasilia)
 
-	if !bytes.Equal(first, shifted) {
+	if got := marshal(t, buildReport(t, shifted)); !bytes.Equal(first, got) {
 		t.Error("boundary offsets changed the report bytes")
 	}
 
@@ -138,74 +176,142 @@ func TestMarshalIsDeterministic(t *testing.T) {
 }
 
 func TestMarshalRecordsEveryPart(t *testing.T) {
-	data, err := Marshal(buildReport(t, testBoundaries))
-	if err != nil {
-		t.Fatal(err)
-	}
+	cfg := config(t, "01-baseline.json")
+	data := marshal(t, buildReport(t, cfg))
 
 	var report struct {
 		Version       string `json:"training_report_version"`
 		Configuration struct {
-			Algorithm string  `json:"algorithm"`
-			Seed      int64   `json:"seed"`
-			Threshold float64 `json:"threshold"`
+			SHA256 string          `json:"config_sha256"`
+			Config json.RawMessage `json:"config"`
 		} `json:"configuration"`
 		Dataset struct {
-			SHA256  string `json:"dataset_sha256"`
-			Records struct {
-				Usable int `json:"usable"`
-			} `json:"records"`
+			FeatureSchema string `json:"feature_schema"`
 		} `json:"dataset"`
-		Partitions struct {
-			TrainEnd string                     `json:"train_end"`
-			Train    evaluation.PartitionCounts `json:"train"`
-			Test     evaluation.PartitionCounts `json:"test"`
-		} `json:"partitions"`
-		Validation evaluation.Metrics `json:"validation"`
-		Test       evaluation.Metrics `json:"test"`
+		Coverage struct {
+			Train struct {
+				UsableRecords int                       `json:"usable_records"`
+				Populations   map[string]int            `json:"populations"`
+				LimitPeriods  map[string]int            `json:"limit_periods"`
+				Sources       map[string]map[string]int `json:"sources"`
+			} `json:"train"`
+			NotExercisedInTrain []SourceState `json:"not_exercised_in_train"`
+		} `json:"coverage"`
+		Selection struct {
+			RequestedEpochs int      `json:"requested_epochs"`
+			SelectedEpoch   int      `json:"selected_epoch"`
+			StopReason      string   `json:"stop_reason"`
+			Objective       *string  `json:"objective"`
+			Value           *float64 `json:"selected_objective_value"`
+			Threshold       struct {
+				Policy string  `json:"policy"`
+				Value  float64 `json:"value"`
+			} `json:"threshold"`
+		} `json:"selection"`
+		TestEvaluated bool                `json:"test_evaluated"`
+		Test          *evaluation.Metrics `json:"test"`
 	}
 
 	if err := json.Unmarshal(data, &report); err != nil {
 		t.Fatal(err)
 	}
 
-	sum := sha256.Sum256(dataset(t))
+	wantSHA256, err := cfg.SHA256()
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := cfg.Canonical()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var compact bytes.Buffer
+	if err := json.Compact(&compact, report.Configuration.Config); err != nil {
+		t.Fatal(err)
+	}
+
+	train := report.Coverage.Train
 
 	switch {
-	case report.Version != "pix-training-report-v1":
+	case report.Version != "pix-training-report-v2":
 		t.Errorf("version = %q", report.Version)
-	case report.Configuration.Algorithm != "full-batch-gradient-descent" || report.Configuration.Seed != 42:
-		t.Errorf("configuration = %+v", report.Configuration)
-	case report.Dataset.SHA256 != hex.EncodeToString(sum[:]) || report.Dataset.Records.Usable != 3:
-		t.Errorf("dataset = %+v", report.Dataset)
-	case report.Partitions.TrainEnd != "2026-05-31T23:59:59Z":
-		t.Errorf("train_end = %q", report.Partitions.TrainEnd)
-	case report.Partitions.Train.Legitimate != 1 || report.Partitions.Test.Fraud != 1:
-		t.Errorf("partitions = %+v", report.Partitions)
-	case report.Validation.TruePositives != 1 || report.Test.FalseNegatives != 1:
-		t.Errorf("metrics: validation %+v, test %+v", report.Validation, report.Test)
-	case report.Test.UnknownLossFraudsMissed != 1:
-		t.Errorf("test unknown loss missed = %d, want 1", report.Test.UnknownLossFraudsMissed)
+	case report.Configuration.SHA256 != wantSHA256 || !bytes.Equal(compact.Bytes(), canonical):
+		t.Errorf("configuration = %s %s", report.Configuration.SHA256, report.Configuration.Config)
+	case report.Dataset.FeatureSchema != "pix-risk-v1":
+		t.Errorf("dataset feature schema = %q", report.Dataset.FeatureSchema)
+	case train.UsableRecords != 4 || train.Populations["no_payer_device"] != 1 || train.Populations["no_period_limit"] != 1:
+		t.Errorf("train coverage = %+v", train)
+	case train.LimitPeriods["daytime"] != 3 || train.LimitPeriods["no_period_limit"] != 1:
+		t.Errorf("train limit periods = %v", train.LimitPeriods)
+	case train.Sources["payer_device_registration"]["known"] != 3 || train.Sources["payer_device_registration"]["not_applicable"] != 1:
+		t.Errorf("train device registration states = %v", train.Sources["payer_device_registration"])
+	case report.Selection.RequestedEpochs != 5000 || report.Selection.SelectedEpoch != 5000 || report.Selection.StopReason != "max_epochs":
+		t.Errorf("selection = %+v", report.Selection)
+	case report.Selection.Objective != nil || report.Selection.Value != nil:
+		t.Errorf("a final_epoch run has no objective: %+v", report.Selection)
+	case report.Selection.Threshold.Policy != "fixed" || report.Selection.Threshold.Value != 0.5:
+		t.Errorf("threshold = %+v", report.Selection.Threshold)
+	case !report.TestEvaluated || report.Test == nil || report.Test.Threshold != 0.5:
+		t.Errorf("test = %v %+v", report.TestEvaluated, report.Test)
+	}
+
+	if !containsState(report.Coverage.NotExercisedInTrain, SourceState{"period_limit", "stale"}) ||
+		containsState(report.Coverage.NotExercisedInTrain, SourceState{"period_limit", "known"}) {
+		t.Errorf("not exercised in train = %v", report.Coverage.NotExercisedInTrain)
+	}
+}
+
+func containsState(states []SourceState, want SourceState) bool {
+	for _, state := range states {
+		if state == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestMarshalOfASkippedTestPartition(t *testing.T) {
+	cfg := config(t, "02-no-hidden-layer.json")
+	data := marshal(t, buildReport(t, cfg))
+
+	if !bytes.Contains(data, []byte(`"test_evaluated": false`)) || !bytes.Contains(data, []byte(`"test": null`)) {
+		t.Errorf("report does not show a skipped test partition:\n%s", data)
 	}
 }
 
 func TestMarshalRejectsInconsistentReports(t *testing.T) {
+	best := config(t, "04-best-validation-loss.json")
+
 	tests := map[string]func(*Report){
-		"empty algorithm":         func(r *Report) { r.Configuration.Algorithm = "" },
-		"zero epochs":             func(r *Report) { r.Configuration.Epochs = 0 },
-		"invalid learning rate":   func(r *Report) { r.Configuration.LearningRate = -1 },
-		"threshold above 1":       func(r *Report) { r.Configuration.Threshold = 1.5 },
-		"threshold mismatch":      func(r *Report) { r.Test.Threshold = 0.4 },
-		"feature schema mismatch": func(r *Report) { r.Configuration.FeatureSchema = "transaction-features-v2" },
+		"invalid configuration":   func(r *Report) { r.Configuration.Config.MaxEpochs = 0 },
+		"other feature schema":    func(r *Report) { r.Dataset.FeatureSchema = "transaction-features-v1" },
 		"invalid records":         func(r *Report) { r.Dataset.Records.Invalid = 1; r.Dataset.Records.Total++ },
 		"wrong dataset report":    func(r *Report) { r.Dataset.DatasetReportVersion = "v0" },
-		"reversed boundaries": func(r *Report) {
-			r.Partitions.TrainEnd, r.Partitions.ValidationEnd = r.Partitions.ValidationEnd, r.Partitions.TrainEnd
+		"other boundaries":        func(r *Report) { r.Partitions.TrainEnd = r.Partitions.TrainEnd.Add(time.Second) },
+		"other requested epochs":  func(r *Report) { r.Selection.RequestedEpochs = 4000 },
+		"more epochs than asked":  func(r *Report) { r.Selection.ActualEpochs = 6000 },
+		"selected after actual":   func(r *Report) { r.Selection.SelectedEpoch = 6000 },
+		"stopped early w/o rule":  func(r *Report) { r.Selection.StopReason = StopEarlyStopping },
+		"short max_epochs run":    func(r *Report) { r.Selection.ActualEpochs = 4000; r.Selection.SelectedEpoch = 4000 },
+		"unknown stop reason":     func(r *Report) { r.Selection.StopReason = "canceled" },
+		"final epoch not last":    func(r *Report) { r.Selection.SelectedEpoch = 100 },
+		"final epoch objective":   func(r *Report) { objective := "validation_loss"; r.Selection.Objective = &objective },
+		"other checkpoint policy": func(r *Report) { r.Selection.CheckpointPolicy = "best_validation" },
+		"other threshold value":   func(r *Report) { r.Selection.Threshold.Value = 0.4 },
+		"other threshold policy":  func(r *Report) { r.Selection.Threshold.Policy = "max_recall_at_max_false_positive_rate" },
+		"validation threshold":    func(r *Report) { r.Validation.Threshold = 0.4 },
+		"test threshold":          func(r *Report) { r.Test.Threshold = 0.4 },
+		"test not evaluated":      func(r *Report) { r.TestEvaluated = false },
+		"test without metrics":    func(r *Report) { r.Test = nil },
+		"best validation without objective": func(r *Report) {
+			r.Configuration.Config = best
+			r.Selection.RequestedEpochs, r.Selection.ActualEpochs, r.Selection.SelectedEpoch = 3000, 3000, 3000
+			r.Selection.CheckpointPolicy = "best_validation"
 		},
 	}
 
 	for name, change := range tests {
-		report := buildReport(t, testBoundaries)
+		report := buildReport(t, config(t, "01-baseline.json"))
 		change(&report)
 
 		if _, err := Marshal(report); err == nil {
@@ -214,47 +320,66 @@ func TestMarshalRejectsInconsistentReports(t *testing.T) {
 	}
 }
 
-// A trained model states exactly which dataset bytes and configuration
-// produced it, and binds its report by hash.
-func TestModelProvenanceBindsTheReport(t *testing.T) {
-	report := buildReport(t, testBoundaries)
+func TestCoverageListsStatesTheTrainPartitionNeverHas(t *testing.T) {
+	coverage := NewCoverage(nil, nil, nil)
 
-	reportBytes, err := Marshal(report)
-	if err != nil {
-		t.Fatal(err)
+	var want []SourceState
+	for _, source := range pixrisk.Sources() {
+		for _, state := range pixrisk.PossibleStates(source) {
+			want = append(want, SourceState{source, state})
+		}
 	}
+
+	if !reflect.DeepEqual(coverage.NotExercisedInTrain, want) {
+		t.Errorf("an empty train partition must list every state, got %v", coverage.NotExercisedInTrain)
+	}
+
+	if coverage.Train.UsableRecords != 0 || coverage.Train.Populations["new_payer_account"] != 0 {
+		t.Errorf("empty coverage = %+v", coverage.Train)
+	}
+}
+
+// A trained model states exactly which dataset bytes, configuration, and
+// selection produced it, and binds its report by hash.
+func TestModelProvenanceBindsTheReport(t *testing.T) {
+	cfg := config(t, "04-best-validation-loss.json")
+	report := buildReport(t, cfg)
+
+	objective, value, candidates, rate := "validation_loss", 0.0123, 2, 0.5
+	report.Selection = Selection{
+		RequestedEpochs: 3000, ActualEpochs: 400, SelectedEpoch: 210, StopReason: StopEarlyStopping,
+		CheckpointPolicy: "best_validation", Objective: &objective, Evaluations: 40, SelectedObjectiveValue: &value,
+		Threshold: ThresholdChoice{Policy: "max_recall_at_max_false_positive_rate", Value: 0.6,
+			MaxFalsePositiveRate: &rate, Candidates: &candidates},
+	}
+	report.Validation.Threshold = 0.6
+	report.Test.Threshold = 0.6
+
+	reportBytes := marshal(t, report)
 	reportSum := sha256.Sum256(reportBytes)
 
-	network, err := nn.Load("../model.json", "transaction-features-v1")
+	network, err := nn.NewNetwork(cfg.Seed, cfg.Sizes()...)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	provenance := Provenance(report, hex.EncodeToString(reportSum[:]))
-
 	path := filepath.Join(t.TempDir(), "trained.json")
-	if err := network.SaveWithProvenance(path, "transaction-features-v1", provenance); err != nil {
+	if err := network.SaveWithProvenance(path, "pix-risk-v1", Provenance(report, hex.EncodeToString(reportSum[:]))); err != nil {
 		t.Fatalf("SaveWithProvenance() error = %v", err)
 	}
 
-	_, loaded, err := nn.LoadWithProvenance(path, "transaction-features-v1")
+	_, loaded, err := nn.LoadWithProvenance(path, "pix-risk-v1")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	sum := sha256.Sum256(dataset(t))
-
 	switch {
 	case loaded.ReportSHA256 != hex.EncodeToString(reportSum[:]):
-		t.Errorf("report_sha256 = %s, want the SHA-256 of the report bytes", loaded.ReportSHA256)
-	case loaded.DatasetSHA256 != hex.EncodeToString(sum[:]) || loaded.DatasetBytes != int64(len(dataset(t))):
-		t.Errorf("dataset fingerprint = %s (%d bytes)", loaded.DatasetSHA256, loaded.DatasetBytes)
-	case loaded.Seed != 42 || loaded.Epochs != 5000 || loaded.Threshold != 0.5:
-		t.Errorf("configuration = %+v", loaded)
-	case loaded.Records.Usable != 3 || loaded.TrainingExampleVersion != "pix-training-example-v1":
-		t.Errorf("records = %+v", loaded.Records)
-	case !loaded.TrainEnd.Equal(testBoundaries.TrainEnd) || !loaded.ValidationEnd.Equal(testBoundaries.ValidationEnd):
-		t.Errorf("boundaries = %s, %s", loaded.TrainEnd, loaded.ValidationEnd)
+		t.Errorf("report_sha256 = %s", loaded.ReportSHA256)
+	case loaded.Epochs != 210 || loaded.Threshold != 0.6:
+		t.Errorf("provenance = %+v, want the selected epoch and threshold", loaded)
+	case loaded.TrainingExampleVersion != "pix-training-example-v2" || loaded.Records.Usable != 6:
+		t.Errorf("provenance = %+v", loaded)
 	}
 
 	if strings.Contains(string(reportBytes), "NaN") {

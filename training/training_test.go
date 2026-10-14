@@ -22,18 +22,20 @@ import (
 // config returns the baseline configuration for pixRiskFixture.
 func config() trainingconfig.Config {
 	return trainingconfig.Config{
-		FeatureSchema: pixrisk.Schema,
-		HiddenLayers:  []int{4},
-		Activation:    trainingconfig.ActivationSigmoid,
-		Algorithm:     trainingconfig.AlgorithmFullBatchGradient,
-		Loss:          trainingconfig.LossMeanSquaredError,
-		Seed:          42,
-		LearningRate:  1,
-		MaxEpochs:     2000,
-		TrainEnd:      pixRiskBoundaries.TrainEnd,
-		ValidationEnd: pixRiskBoundaries.ValidationEnd,
-		Checkpoint:    trainingconfig.CheckpointFinalEpoch,
-		Threshold:     trainingconfig.Threshold{Policy: trainingconfig.ThresholdFixed, Value: 0.5},
+		FeatureSchema:  pixrisk.Schema,
+		HiddenLayers:   []int{4},
+		Activation:     trainingconfig.ActivationSigmoid,
+		Algorithm:      trainingconfig.AlgorithmFullBatchGradient,
+		Loss:           trainingconfig.LossMeanSquaredError,
+		Seed:           42,
+		LearningRate:   1,
+		MaxEpochs:      2000,
+		TrainEnd:       pixRiskBoundaries.TrainEnd,
+		ValidationEnd:  pixRiskBoundaries.ValidationEnd,
+		Checkpoint:     trainingconfig.Checkpoint{Policy: trainingconfig.CheckpointFinalEpoch},
+		EarlyStopping:  trainingconfig.EarlyStopping{Policy: trainingconfig.EarlyStoppingNone},
+		Threshold:      trainingconfig.Threshold{Policy: trainingconfig.ThresholdFixed, Value: 0.5},
+		TestEvaluation: trainingconfig.TestAfterSelection,
 	}
 }
 
@@ -121,16 +123,20 @@ func TestRunReportsTheDatasetAndPartitions(t *testing.T) {
 func TestRunRecordsTheConfiguration(t *testing.T) {
 	result := run(t, read(t, pixRiskFixture), config())
 
-	want := trainingreport.Configuration{
-		Algorithm:     "full-batch-gradient-descent",
-		FeatureSchema: "pix-risk-v1",
-		Seed:          42,
-		Epochs:        2000,
-		LearningRate:  1,
-		Threshold:     0.5,
+	if !reflect.DeepEqual(result.Report.Configuration.Config, config()) {
+		t.Errorf("configuration = %+v, want %+v", result.Report.Configuration.Config, config())
 	}
-	if result.Report.Configuration != want {
-		t.Errorf("configuration = %+v, want %+v", result.Report.Configuration, want)
+
+	want := trainingreport.Selection{
+		RequestedEpochs:  2000,
+		ActualEpochs:     2000,
+		SelectedEpoch:    2000,
+		StopReason:       trainingreport.StopMaxEpochs,
+		CheckpointPolicy: "final_epoch",
+		Threshold:        trainingreport.ThresholdChoice{Policy: "fixed", Value: 0.5},
+	}
+	if !reflect.DeepEqual(result.Report.Selection, want) {
+		t.Errorf("selection = %+v, want %+v", result.Report.Selection, want)
 	}
 
 	if result.State.Schema != pixrisk.Schema || len(result.State.Features) != pixrisk.FeatureCount {
@@ -152,13 +158,13 @@ func TestRunEvaluatesValidationAndTestAtTheThreshold(t *testing.T) {
 	}
 
 	// One fraud in each partition, detected or missed.
-	for name, metrics := range map[string]evaluation.Metrics{"validation": report.Validation, "test": report.Test} {
+	for name, metrics := range map[string]evaluation.Metrics{"validation": report.Validation, "test": *report.Test} {
 		if metrics.TruePositives+metrics.FalseNegatives != 1 || metrics.FalsePositives+metrics.TrueNegatives != 0 {
 			t.Errorf("%s confusion matrix = %+v", name, metrics)
 		}
 	}
 
-	if report.Test.UnknownLossFraudsDetected+report.Test.UnknownLossFraudsMissed != 1 {
+	if report.Test == nil || report.Test.UnknownLossFraudsDetected+report.Test.UnknownLossFraudsMissed != 1 {
 		t.Errorf("test unknown losses = %+v", report.Test)
 	}
 }
@@ -317,7 +323,7 @@ func TestRunRejectsInvalidConfigurationsBeforeReading(t *testing.T) {
 		"other algorithm":        func(c *trainingconfig.Config) { c.Algorithm = "adam" },
 		"other loss":             func(c *trainingconfig.Config) { c.Loss = "cross-entropy" },
 		"other activation":       func(c *trainingconfig.Config) { c.Activation = "relu" },
-		"other checkpoint":       func(c *trainingconfig.Config) { c.Checkpoint = "best_validation" },
+		"other checkpoint":       func(c *trainingconfig.Config) { c.Checkpoint.Policy = "last_improvement" },
 		"other threshold policy": func(c *trainingconfig.Config) { c.Threshold.Policy = "max_f1" },
 		"zero epochs":            func(c *trainingconfig.Config) { c.MaxEpochs = 0 },
 		"too many epochs":        func(c *trainingconfig.Config) { c.MaxEpochs = trainingconfig.MaxEpochs + 1 },

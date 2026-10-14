@@ -1,0 +1,9 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/selection/early_stopping/policy",
+      "code": "incompatible_options"
+    }
+  ]
+}

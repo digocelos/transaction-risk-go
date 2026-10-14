@@ -185,6 +185,10 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 		t.Errorf("the trained network does not take the 62 pix-risk-v1 features: %v", err)
 	}
 
+	if !strings.Contains(r.stderr, "selected epoch 5000 of 5000 trained") {
+		t.Errorf("stderr does not describe the selection:\n%s", r.stderr)
+	}
+
 	if !strings.Contains(r.stderr, "training loss") {
 		t.Errorf("stderr has no training loss progress:\n%s", r.stderr)
 	}
@@ -285,7 +289,7 @@ func TestTrainRejectsTrainPartitionWithOneClass(t *testing.T) {
 func TestTrainRejectsInvalidConfigurations(t *testing.T) {
 	dir := t.TempDir()
 	f := flags(dir)
-	f["config"] = "../../docs/contracts/training-config-examples/08-invalid-ranges.json"
+	f["config"] = "../../docs/contracts/training-config-examples/11-invalid-dimensions-and-ranges.json"
 
 	r := train(t, args(f)...)
 
@@ -293,7 +297,7 @@ func TestTrainRejectsInvalidConfigurations(t *testing.T) {
 		t.Errorf("exit code %d, stdout %q, want 1 and empty", r.code, r.stdout)
 	}
 
-	for _, want := range []string{"/learning_rate: out_of_range", "/max_epochs: out_of_range", "/selection/threshold/value: out_of_range"} {
+	for _, want := range []string{"/learning_rate: out_of_range", "/max_epochs: out_of_range", "/architecture/hidden_layers/1: out_of_range"} {
 		if !strings.Contains(r.stderr, want) {
 			t.Errorf("stderr does not report %q:\n%s", want, r.stderr)
 		}
@@ -431,5 +435,147 @@ func TestTrainHelp(t *testing.T) {
 
 	if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, "-config") {
 		t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+	}
+}
+
+const selectionDataset = "../../training/testdata/pix-risk-v1-selection.jsonl"
+
+// writeFile writes data into a new temporary directory and returns its path.
+func writeFile(t *testing.T, name string, data []byte) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestTrainSelectsOnValidation(t *testing.T) {
+	dir := t.TempDir()
+	f := flags(dir)
+	f["dataset"] = selectionDataset
+	f["config"] = writeConfig(t, t.TempDir(), `"train_end": "2026-06-05T00:00:00Z",
+    "validation_end": "2026-06-12T00:00:00Z"`, `"train_end": "2026-05-31T00:00:00Z",
+    "validation_end": "2026-06-15T00:00:00Z"`)
+
+	data, err := os.ReadFile(f["config"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := strings.Replace(string(data), `"checkpoint": {
+      "policy": "final_epoch"
+    },`, `"checkpoint": {"policy": "best_validation", "objective": "validation_loss", "evaluation_interval": 10, "min_improvement": 0},`, 1)
+	selection = strings.Replace(selection, `"early_stopping": {
+      "policy": "none"
+    },`, `"early_stopping": {"policy": "patience", "patience": 5},`, 1)
+	f["config"] = writeFile(t, "config.json", []byte(selection))
+
+	r := train(t, args(f)...)
+	if r.code != 0 {
+		t.Fatalf("exit code = %d, stderr:\n%s", r.code, r.stderr)
+	}
+
+	var report struct {
+		Selection struct {
+			ActualEpochs  int    `json:"actual_epochs"`
+			SelectedEpoch int    `json:"selected_epoch"`
+			StopReason    string `json:"stop_reason"`
+		} `json:"selection"`
+	}
+	data, err = os.ReadFile(f["report-output"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(data, &report); err != nil {
+		t.Fatal(err)
+	}
+
+	if report.Selection.StopReason != "early_stopping" || report.Selection.ActualEpochs != report.Selection.SelectedEpoch+50 {
+		t.Errorf("selection = %+v", report.Selection)
+	}
+
+	_, provenance, err := nn.LoadWithProvenance(f["model-output"], "pix-risk-v1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if provenance.Epochs != report.Selection.SelectedEpoch {
+		t.Errorf("model epochs = %d, want the selected epoch %d", provenance.Epochs, report.Selection.SelectedEpoch)
+	}
+}
+
+// A threshold policy that no candidate satisfies writes nothing and
+// reports why on standard output.
+func TestTrainReportsAnInfeasibleThresholdPolicy(t *testing.T) {
+	data, err := os.ReadFile(selectionDataset)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The two validation records have the same scoring input and opposite
+	// labels, so every candidate flags the legitimate one.
+	lines := strings.SplitAfter(string(data), "\n")
+	fraud := lines[7]
+	legitimate := strings.NewReplacer(`"label":"fraud"`, `"label":"legitimate"`,
+		`"loss_amount_cents":240000`, `"loss_amount_cents":0`).Replace(fraud)
+
+	dir := t.TempDir()
+	f := flags(dir)
+	f["dataset"] = writeFile(t, "dataset.jsonl", []byte(strings.Join(append(append(lines[:6:6], fraud, legitimate), lines[10:]...), "")))
+
+	config, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selection := strings.NewReplacer(
+		`"train_end": "2026-06-05T00:00:00Z"`, `"train_end": "2026-05-31T00:00:00Z"`,
+		`"validation_end": "2026-06-12T00:00:00Z"`, `"validation_end": "2026-06-15T00:00:00Z"`,
+		`"policy": "fixed",
+      "value": 0.5`, `"policy": "max_recall_at_max_false_positive_rate",
+      "max_false_positive_rate": 0`,
+	).Replace(string(config))
+	f["config"] = writeFile(t, "config.json", []byte(selection))
+
+	r := train(t, args(f)...)
+	if r.code != 3 {
+		t.Fatalf("exit code = %d, want 3; stderr:\n%s", r.code, r.stderr)
+	}
+
+	var infeasible struct {
+		Status                            string  `json:"status"`
+		ThresholdPolicy                   string  `json:"threshold_policy"`
+		MaxFalsePositiveRate              float64 `json:"max_false_positive_rate"`
+		LowestAchievableFalsePositiveRate float64 `json:"lowest_achievable_false_positive_rate"`
+	}
+	output(t, r.stdout, &infeasible)
+
+	if infeasible.Status != "selection_infeasible" || infeasible.ThresholdPolicy != "max_recall_at_max_false_positive_rate" ||
+		infeasible.MaxFalsePositiveRate != 0 || infeasible.LowestAchievableFalsePositiveRate != 1 {
+		t.Errorf("output = %+v", infeasible)
+	}
+
+	if got := entries(t, dir); len(got) != 0 {
+		t.Errorf("output directory = %v, want no artifact", got)
+	}
+}
+
+func TestTrainRejectsAValidationPartitionTheSelectionCannotUse(t *testing.T) {
+	dir := t.TempDir()
+	f := flags(dir)
+
+	// The baseline boundaries leave one fraud and no legitimate record in
+	// the fixture's validation partition.
+	f["config"] = writeConfig(t, t.TempDir(), `"policy": "fixed",
+      "value": 0.5`, `"policy": "max_recall_at_max_false_positive_rate",
+      "max_false_positive_rate": 0.1`)
+
+	r := train(t, args(f)...)
+
+	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "validation partition has 1 usable fraud and 0 usable legitimate") {
+		t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+	}
+
+	if got := entries(t, dir); len(got) != 0 {
+		t.Errorf("output directory = %v, want no artifact", got)
 	}
 }

@@ -1,10 +1,9 @@
 {
-  "config_version": "pix-training-config-v1",
+  "config_version": "pix-training-config-v2",
   "feature_schema": "pix-risk-v1",
   "architecture": {
     "hidden_layers": [4],
-    "activation": "sigmoid",
-    "dropout": 0.1
+    "activation": "sigmoid"
   },
   "algorithm": "full-batch-gradient-descent",
   "loss": "mean-squared-error",
@@ -16,11 +15,18 @@
     "validation_end": "2026-06-12T00:00:00Z"
   },
   "selection": {
-    "checkpoint": "final_epoch",
+    "checkpoint": {
+      "policy": "best_validation",
+      "objective": "accuracy",
+      "evaluation_interval": 10,
+      "min_improvement": 0
+    },
+    "early_stopping": {
+      "policy": "none"
+    },
     "threshold": {
-      "policy": "fixed",
-      "value": 0.5
-    }
-  },
-  "epochs": 5000
+      "policy": "max_f1"
+    },
+    "test_evaluation": "always"
+  }
 }

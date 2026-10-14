@@ -1,16 +1,20 @@
 // Package trainingconfig decodes and validates training configurations
-// that follow pix-training-config-v1, as specified in
-// docs/contracts/pix-training-config-v1.md. A configuration fixes every
+// that follow pix-training-config-v2, as specified in
+// docs/contracts/pix-training-config-v2.md. A configuration fixes every
 // option of a training run before any dataset is read or any artifact is
 // written.
 package trainingconfig
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"time"
 	"unicode/utf8"
@@ -21,12 +25,12 @@ import (
 )
 
 // Version is the only configuration version this package supports.
-const Version = "pix-training-config-v1"
+const Version = "pix-training-config-v2"
 
 // MaxDocumentSize is the largest configuration document, in bytes.
 const MaxDocumentSize = 65536
 
-// Resource limits of pix-training-config-v1.
+// Resource limits of pix-training-config-v2.
 const (
 	MaxHiddenLayers  = 4
 	MaxLayerNeurons  = 256
@@ -34,16 +38,29 @@ const (
 	MaxLearningRate  = 100.0
 	thresholdMinimum = 0.0
 	thresholdMaximum = 1.0
+	MaxImprovement   = 1.0
 )
 
-// Supported options. Each option has exactly one supported value in this
-// version; any other value is rejected.
+// Supported options. Any other value is rejected.
 const (
 	ActivationSigmoid          = "sigmoid"
 	AlgorithmFullBatchGradient = "full-batch-gradient-descent"
 	LossMeanSquaredError       = "mean-squared-error"
-	CheckpointFinalEpoch       = "final_epoch"
-	ThresholdFixed             = "fixed"
+
+	CheckpointFinalEpoch     = "final_epoch"
+	CheckpointBestValidation = "best_validation"
+
+	ObjectiveValidationLoss  = "validation_loss"
+	ObjectiveValidationPRAUC = "validation_pr_auc"
+
+	EarlyStoppingNone     = "none"
+	EarlyStoppingPatience = "patience"
+
+	ThresholdFixed                           = "fixed"
+	ThresholdMaxRecallAtMaxFalsePositiveRate = "max_recall_at_max_false_positive_rate"
+
+	TestSkip           = "skip"
+	TestAfterSelection = "after_selection"
 )
 
 // Validation codes. The catalog is closed.
@@ -64,28 +81,49 @@ const (
 	CodeInvalidFormat            = strictjson.CodeInvalidFormat
 	CodeInvalidEnumValue         = strictjson.CodeInvalidEnumValue
 	CodeBoundariesOutOfOrder     = "boundaries_out_of_order"
+	CodeIncompatibleOptions      = "incompatible_options"
 )
 
-// Config is a valid pix-training-config-v1 configuration.
+// Config is a valid pix-training-config-v2 configuration.
 type Config struct {
-	FeatureSchema string
-	HiddenLayers  []int
-	Activation    string
-	Algorithm     string
-	Loss          string
-	Seed          int64
-	LearningRate  float64
-	MaxEpochs     int
-	TrainEnd      time.Time
-	ValidationEnd time.Time
-	Checkpoint    string
-	Threshold     Threshold
+	FeatureSchema  string
+	HiddenLayers   []int
+	Activation     string
+	Algorithm      string
+	Loss           string
+	Seed           int64
+	LearningRate   float64
+	MaxEpochs      int
+	TrainEnd       time.Time
+	ValidationEnd  time.Time
+	Checkpoint     Checkpoint
+	EarlyStopping  EarlyStopping
+	Threshold      Threshold
+	TestEvaluation string
 }
 
-// Threshold is the decision threshold policy.
+// Checkpoint chooses which epoch's network is kept. Objective,
+// EvaluationInterval, and MinImprovement apply to best_validation only.
+type Checkpoint struct {
+	Policy             string
+	Objective          string
+	EvaluationInterval int
+	MinImprovement     float64
+}
+
+// EarlyStopping stops training after Patience validation evaluations
+// without improvement. Patience applies to the patience policy only.
+type EarlyStopping struct {
+	Policy   string
+	Patience int
+}
+
+// Threshold is the decision threshold policy. Value applies to fixed, and
+// MaxFalsePositiveRate to max_recall_at_max_false_positive_rate.
 type Threshold struct {
-	Policy string
-	Value  float64
+	Policy               string
+	Value                float64
+	MaxFalsePositiveRate float64
 }
 
 // Sizes returns the layer sizes of the network: the feature count of the
@@ -146,7 +184,7 @@ func Read(r io.Reader) (Config, error) {
 }
 
 // Decode validates a configuration document and returns its typed form. A
-// document that breaks pix-training-config-v1 yields a *ValidationError.
+// document that breaks pix-training-config-v2 yields a *ValidationError.
 func Decode(data []byte) (Config, error) {
 	root, issues := parseDocument(data)
 	if len(issues) > 0 {
@@ -342,24 +380,116 @@ func (d *decoder) boundaries(root *strictjson.Value, config *Config) {
 }
 
 func (d *decoder) selection(root *strictjson.Value, config *Config) {
-	object, path := d.ObjectMember("", root, "selection", false, "checkpoint", "threshold")
+	object, path := d.ObjectMember("", root, "selection", false,
+		"checkpoint", "early_stopping", "threshold", "test_evaluation")
 	if object == nil {
 		return
 	}
 
-	config.Checkpoint = d.Enum(path, object, "checkpoint", CheckpointFinalEpoch)
+	config.Checkpoint = d.checkpoint(path, object)
+	config.EarlyStopping = d.earlyStopping(path, object)
+	config.Threshold = d.threshold(path, object)
+	config.TestEvaluation = d.Enum(path, object, "test_evaluation", TestSkip, TestAfterSelection)
 
-	threshold, thresholdPath := d.ObjectMember(path, object, "threshold", false, "policy", "value")
-	if threshold == nil {
-		return
+	if config.EarlyStopping.Policy == EarlyStoppingPatience && config.Checkpoint.Policy == CheckpointFinalEpoch {
+		d.Add(path+"/early_stopping/policy", CodeIncompatibleOptions,
+			"early stopping counts validation evaluations, so it needs the best_validation checkpoint")
+	}
+}
+
+// policyObject reads an object whose members depend on its policy: it
+// returns the policy, or "" when the object or its policy is invalid, in
+// which case its other members are not checked.
+func (d *decoder) policyObject(path string, parent *strictjson.Value, name string,
+	members map[string][]string) (*strictjson.Value, string, string) {
+	object, objectPath, state := d.Member(path, parent, name, false)
+	if state != strictjson.Valid {
+		return nil, objectPath, ""
 	}
 
-	config.Threshold = Threshold{
-		Policy: d.Enum(thresholdPath, threshold, "policy", ThresholdFixed),
-		Value: d.number(thresholdPath, threshold, "value", func(value float64) bool {
-			return value >= thresholdMinimum && value <= thresholdMaximum
-		}, "a number from 0 to 1"),
+	if object.Kind != strictjson.KindObject {
+		d.Add(objectPath, CodeWrongType, "%s must be an object", name)
+		return nil, objectPath, ""
 	}
+
+	policies := make([]string, 0, len(members))
+	for policy := range members {
+		policies = append(policies, policy)
+	}
+	slices.Sort(policies)
+
+	policy := d.Enum(objectPath, object, "policy", policies...)
+	if policy != "" {
+		d.Object(objectPath, object, append([]string{"policy"}, members[policy]...)...)
+	}
+
+	return object, objectPath, policy
+}
+
+func (d *decoder) checkpoint(path string, parent *strictjson.Value) Checkpoint {
+	object, objectPath, policy := d.policyObject(path, parent, "checkpoint", map[string][]string{
+		CheckpointFinalEpoch:     nil,
+		CheckpointBestValidation: {"objective", "evaluation_interval", "min_improvement"},
+	})
+
+	checkpoint := Checkpoint{Policy: policy}
+	if policy != CheckpointBestValidation {
+		return checkpoint
+	}
+
+	checkpoint.Objective = d.Enum(objectPath, object, "objective", ObjectiveValidationLoss, ObjectiveValidationPRAUC)
+
+	interval, state := d.Integer(objectPath, object, "evaluation_interval", 1, false)
+	if state == strictjson.Valid && interval > MaxEpochs {
+		d.Add(objectPath+"/evaluation_interval", CodeOutOfRange, "evaluation_interval must be at most %d", MaxEpochs)
+	}
+	checkpoint.EvaluationInterval = int(interval)
+
+	checkpoint.MinImprovement = d.number(objectPath, object, "min_improvement", func(value float64) bool {
+		return value >= 0 && value <= MaxImprovement
+	}, "a number from 0 to 1")
+
+	return checkpoint
+}
+
+func (d *decoder) earlyStopping(path string, parent *strictjson.Value) EarlyStopping {
+	object, objectPath, policy := d.policyObject(path, parent, "early_stopping", map[string][]string{
+		EarlyStoppingNone:     nil,
+		EarlyStoppingPatience: {"patience"},
+	})
+
+	stopping := EarlyStopping{Policy: policy}
+	if policy != EarlyStoppingPatience {
+		return stopping
+	}
+
+	patience, state := d.Integer(objectPath, object, "patience", 1, false)
+	if state == strictjson.Valid && patience > MaxEpochs {
+		d.Add(objectPath+"/patience", CodeOutOfRange, "patience must be at most %d", MaxEpochs)
+	}
+	stopping.Patience = int(patience)
+
+	return stopping
+}
+
+func (d *decoder) threshold(path string, parent *strictjson.Value) Threshold {
+	object, objectPath, policy := d.policyObject(path, parent, "threshold", map[string][]string{
+		ThresholdFixed:                           {"value"},
+		ThresholdMaxRecallAtMaxFalsePositiveRate: {"max_false_positive_rate"},
+	})
+
+	threshold := Threshold{Policy: policy}
+	probability := func(value float64) bool { return value >= thresholdMinimum && value <= thresholdMaximum }
+
+	switch policy {
+	case ThresholdFixed:
+		threshold.Value = d.number(objectPath, object, "value", probability, "a number from 0 to 1")
+	case ThresholdMaxRecallAtMaxFalsePositiveRate:
+		threshold.MaxFalsePositiveRate = d.number(objectPath, object, "max_false_positive_rate",
+			probability, "a number from 0 to 1")
+	}
+
+	return threshold
 }
 
 // Validate checks a configuration built in code against the rules Decode
@@ -374,10 +504,6 @@ func (c Config) Validate() error {
 		return fmt.Errorf("algorithm %q is not supported", c.Algorithm)
 	case c.Loss != LossMeanSquaredError:
 		return fmt.Errorf("loss %q is not supported", c.Loss)
-	case c.Checkpoint != CheckpointFinalEpoch:
-		return fmt.Errorf("checkpoint %q is not supported", c.Checkpoint)
-	case c.Threshold.Policy != ThresholdFixed:
-		return fmt.Errorf("threshold policy %q is not supported", c.Threshold.Policy)
 	case len(c.HiddenLayers) > MaxHiddenLayers:
 		return fmt.Errorf("at most %d hidden layers are supported", MaxHiddenLayers)
 	case c.Seed < 0 || c.Seed > strictjson.MaxInteger:
@@ -386,8 +512,6 @@ func (c Config) Validate() error {
 		return fmt.Errorf("learning rate must be greater than 0 and at most %v", MaxLearningRate)
 	case c.MaxEpochs < 1 || c.MaxEpochs > MaxEpochs:
 		return fmt.Errorf("max epochs must be from 1 to %d", MaxEpochs)
-	case !(c.Threshold.Value >= thresholdMinimum && c.Threshold.Value <= thresholdMaximum):
-		return errors.New("threshold must be a number from 0 to 1")
 	case c.TrainEnd.IsZero() || c.ValidationEnd.IsZero() || !c.TrainEnd.Before(c.ValidationEnd):
 		return errors.New("train_end must be earlier than validation_end")
 	}
@@ -398,5 +522,166 @@ func (c Config) Validate() error {
 		}
 	}
 
+	return c.validateSelection()
+}
+
+func (c Config) validateSelection() error {
+	probability := func(value float64) bool { return value >= thresholdMinimum && value <= thresholdMaximum }
+
+	switch c.Checkpoint.Policy {
+	case CheckpointFinalEpoch:
+	case CheckpointBestValidation:
+		switch {
+		case c.Checkpoint.Objective != ObjectiveValidationLoss && c.Checkpoint.Objective != ObjectiveValidationPRAUC:
+			return fmt.Errorf("checkpoint objective %q is not supported", c.Checkpoint.Objective)
+		case c.Checkpoint.EvaluationInterval < 1 || c.Checkpoint.EvaluationInterval > MaxEpochs:
+			return fmt.Errorf("evaluation interval must be from 1 to %d", MaxEpochs)
+		case !(c.Checkpoint.MinImprovement >= 0 && c.Checkpoint.MinImprovement <= MaxImprovement):
+			return errors.New("min improvement must be a number from 0 to 1")
+		}
+	default:
+		return fmt.Errorf("checkpoint policy %q is not supported", c.Checkpoint.Policy)
+	}
+
+	switch c.EarlyStopping.Policy {
+	case EarlyStoppingNone:
+	case EarlyStoppingPatience:
+		switch {
+		case c.EarlyStopping.Patience < 1 || c.EarlyStopping.Patience > MaxEpochs:
+			return fmt.Errorf("patience must be from 1 to %d", MaxEpochs)
+		case c.Checkpoint.Policy != CheckpointBestValidation:
+			return errors.New("early stopping needs the best_validation checkpoint")
+		}
+	default:
+		return fmt.Errorf("early stopping policy %q is not supported", c.EarlyStopping.Policy)
+	}
+
+	switch c.Threshold.Policy {
+	case ThresholdFixed:
+		if !probability(c.Threshold.Value) {
+			return errors.New("threshold must be a number from 0 to 1")
+		}
+	case ThresholdMaxRecallAtMaxFalsePositiveRate:
+		if !probability(c.Threshold.MaxFalsePositiveRate) {
+			return errors.New("the maximum false positive rate must be a number from 0 to 1")
+		}
+	default:
+		return fmt.Errorf("threshold policy %q is not supported", c.Threshold.Policy)
+	}
+
+	if c.TestEvaluation != TestSkip && c.TestEvaluation != TestAfterSelection {
+		return fmt.Errorf("test evaluation %q is not supported", c.TestEvaluation)
+	}
+
 	return nil
+}
+
+// canonical is the canonical form of a configuration. Members that the
+// chosen policies do not use are omitted.
+type canonical struct {
+	ConfigVersion string             `json:"config_version"`
+	FeatureSchema string             `json:"feature_schema"`
+	Architecture  canonicalArch      `json:"architecture"`
+	Algorithm     string             `json:"algorithm"`
+	Loss          string             `json:"loss"`
+	Seed          int64              `json:"seed"`
+	LearningRate  float64            `json:"learning_rate"`
+	MaxEpochs     int                `json:"max_epochs"`
+	Boundaries    canonicalBounds    `json:"boundaries"`
+	Selection     canonicalSelection `json:"selection"`
+}
+
+type canonicalArch struct {
+	HiddenLayers []int  `json:"hidden_layers"`
+	Activation   string `json:"activation"`
+}
+
+type canonicalBounds struct {
+	TrainEnd      string `json:"train_end"`
+	ValidationEnd string `json:"validation_end"`
+}
+
+type canonicalSelection struct {
+	Checkpoint struct {
+		Policy             string   `json:"policy"`
+		Objective          string   `json:"objective,omitempty"`
+		EvaluationInterval int      `json:"evaluation_interval,omitempty"`
+		MinImprovement     *float64 `json:"min_improvement,omitempty"`
+	} `json:"checkpoint"`
+	EarlyStopping struct {
+		Policy   string `json:"policy"`
+		Patience int    `json:"patience,omitempty"`
+	} `json:"early_stopping"`
+	Threshold struct {
+		Policy               string   `json:"policy"`
+		Value                *float64 `json:"value,omitempty"`
+		MaxFalsePositiveRate *float64 `json:"max_false_positive_rate,omitempty"`
+	} `json:"threshold"`
+	TestEvaluation string `json:"test_evaluation"`
+}
+
+// Canonical returns the canonical JSON form of a valid configuration: the
+// members in specification order, compact, boundaries in UTC with
+// nanosecond precision, numbers in their shortest form, and only the
+// members the chosen policies use. Two documents that differ only in
+// formatting, member order, timestamp offsets, or number spelling have the
+// same canonical form.
+func (c Config) Canonical() ([]byte, error) {
+	if err := c.Validate(); err != nil {
+		return nil, err
+	}
+
+	form := canonical{
+		ConfigVersion: Version,
+		FeatureSchema: c.FeatureSchema,
+		Architecture:  canonicalArch{HiddenLayers: append([]int{}, c.HiddenLayers...), Activation: c.Activation},
+		Algorithm:     c.Algorithm,
+		Loss:          c.Loss,
+		Seed:          c.Seed,
+		LearningRate:  c.LearningRate,
+		MaxEpochs:     c.MaxEpochs,
+		Boundaries: canonicalBounds{
+			TrainEnd:      c.TrainEnd.UTC().Format(time.RFC3339Nano),
+			ValidationEnd: c.ValidationEnd.UTC().Format(time.RFC3339Nano),
+		},
+	}
+
+	selection := &form.Selection
+	selection.Checkpoint.Policy = c.Checkpoint.Policy
+	if c.Checkpoint.Policy == CheckpointBestValidation {
+		minImprovement := c.Checkpoint.MinImprovement
+		selection.Checkpoint.Objective = c.Checkpoint.Objective
+		selection.Checkpoint.EvaluationInterval = c.Checkpoint.EvaluationInterval
+		selection.Checkpoint.MinImprovement = &minImprovement
+	}
+
+	selection.EarlyStopping.Policy = c.EarlyStopping.Policy
+	selection.EarlyStopping.Patience = c.EarlyStopping.Patience
+
+	selection.Threshold.Policy = c.Threshold.Policy
+	switch c.Threshold.Policy {
+	case ThresholdFixed:
+		value := c.Threshold.Value
+		selection.Threshold.Value = &value
+	case ThresholdMaxRecallAtMaxFalsePositiveRate:
+		rate := c.Threshold.MaxFalsePositiveRate
+		selection.Threshold.MaxFalsePositiveRate = &rate
+	}
+
+	selection.TestEvaluation = c.TestEvaluation
+
+	return json.Marshal(form)
+}
+
+// SHA256 returns the SHA-256, as 64 lowercase hexadecimal digits, of the
+// canonical form of a valid configuration. It identifies the configuration
+// in reports.
+func (c Config) SHA256() (string, error) {
+	data, err := c.Canonical()
+	if err != nil {
+		return "", err
+	}
+
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:]), nil
 }

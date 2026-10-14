@@ -8,8 +8,8 @@
   "algorithm": "full-batch-gradient-descent",
   "loss": "mean-squared-error",
   "seed": 42,
-  "learning_rate": 0,
-  "max_epochs": 1000001,
+  "learning_rate": 1.0,
+  "max_epochs": 5000,
   "boundaries": {
     "train_end": "2026-06-05T00:00:00Z",
     "validation_end": "2026-06-12T00:00:00Z"
@@ -18,7 +18,7 @@
     "checkpoint": "final_epoch",
     "threshold": {
       "policy": "fixed",
-      "value": 1.5
+      "value": 0.5
     }
   }
 }
