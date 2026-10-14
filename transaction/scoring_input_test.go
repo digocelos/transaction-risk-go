@@ -30,7 +30,7 @@ func decodeExample(t *testing.T, name string) (pixinput.ScoringInput, expectedRe
 		t.Fatal(err)
 	}
 
-	input, err := pixinput.Decode(data)
+	input, err := pixinput.Decode(data, pixinput.ContractV1)
 	if err != nil {
 		t.Fatalf("Decode(%s) error = %v", name, err)
 	}

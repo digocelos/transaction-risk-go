@@ -193,7 +193,7 @@ func (d *decoder) scoringInput(data []byte, root *strictjson.Value) (pixinput.Sc
 		return pixinput.ScoringInput{}, false
 	}
 
-	input, err := pixinput.Decode(data[value.Start:value.End])
+	input, err := pixinput.Decode(data[value.Start:value.End], pixinput.ContractV1)
 
 	var invalid *pixinput.ValidationError
 	if errors.As(err, &invalid) {

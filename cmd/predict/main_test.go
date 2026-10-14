@@ -218,3 +218,22 @@ func TestPredictReportsContractProblemsWithoutAModel(t *testing.T) {
 		}
 	}
 }
+
+// predict reads pix-payer-input-v1 only until it migrates to version 2.
+func TestPredictRejectsVersion2Inputs(t *testing.T) {
+	t.Chdir("../..")
+
+	r := predict(t, nil, "docs/contracts/examples-v2/01-complete.json")
+	if r.code != 2 {
+		t.Fatalf("exit code = %d, want 2; stderr: %s", r.code, r.stderr)
+	}
+
+	got := withoutMessages(t, output(t, r.stdout))
+	want := map[string]any{
+		"status": "invalid_input",
+		"issues": []any{map[string]any{"path": "/contract_version", "code": "unsupported_contract_version"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("output = %v, want %v", got, want)
+	}
+}

@@ -77,7 +77,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		reader = file
 	}
 
-	input, err := pixinput.Read(reader)
+	input, err := pixinput.Read(reader, pixinput.ContractV1)
 
 	var invalid *pixinput.ValidationError
 	switch {
