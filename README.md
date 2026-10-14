@@ -117,7 +117,7 @@ one JSON Lines record per past Pix payment, embedding its
 [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input
 and the outcome observed later. The records are prepared with the feature
 schema [`pix-risk-v1`](docs/features/pix-risk-v1.md), and a
-[`pix-training-config-v1`](docs/contracts/pix-training-config-v1.md)
+[`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md)
 configuration fixes everything else about the run.
 
 ```bash
@@ -131,20 +131,28 @@ go run ./cmd/train \
 Every flag is required. `training/testdata/pix-risk-v1.jsonl` holds 8 small
 synthetic records for trying the command, and
 [`docs/contracts/training-config-examples/`](docs/contracts/training-config-examples/)
-holds configurations to start from:
+holds configurations to start from, such as
+`04-best-validation-loss.json`:
 
 ```json
 {
-  "config_version": "pix-training-config-v1",
+  "config_version": "pix-training-config-v2",
   "feature_schema": "pix-risk-v1",
   "architecture": {"hidden_layers": [4], "activation": "sigmoid"},
   "algorithm": "full-batch-gradient-descent",
   "loss": "mean-squared-error",
   "seed": 42,
   "learning_rate": 1.0,
-  "max_epochs": 5000,
+  "max_epochs": 3000,
   "boundaries": {"train_end": "2026-06-05T00:00:00Z", "validation_end": "2026-06-12T00:00:00Z"},
-  "selection": {"checkpoint": "final_epoch", "threshold": {"policy": "fixed", "value": 0.5}}
+  "selection": {
+    "checkpoint": {"policy": "best_validation", "objective": "validation_loss",
+                   "evaluation_interval": 10, "min_improvement": 0.0001},
+    "early_stopping": {"policy": "patience", "patience": 20},
+    "threshold": {"policy": "max_recall_at_max_false_positive_rate",
+                  "max_false_positive_rate": 0.5},
+    "test_evaluation": "after_selection"
+  }
 }
 ```
 
@@ -160,20 +168,30 @@ holds configurations to start from:
 3. Splits the other records by decision time only, using the configured
    boundaries, and fits the feature standardization on the usable train
    records only.
-4. Trains the configured network on the usable train records only, with
-   full-batch gradient descent for `max_epochs` epochs. The train
+4. Checks that the validation partition supports the configured selection.
+5. Trains the configured network on the usable train records only, with
+   full-batch gradient descent, for at most `max_epochs` epochs. The train
    partition needs at least one usable `fraud` record and one usable
    `legitimate` record. A step that would make a parameter non-finite
    stops training, and nothing is written.
-5. Scores the validation and test partitions once each and measures them
-   at the configured threshold: a score at or above it predicts fraud.
-6. Writes the training report (`pix-training-report-v1`): the
-   configuration, the dataset report with every exclusion, the partition
-   counts, the group overlap, and the validation and test metrics.
-7. Writes the model in model format version 2: the network plus its
-   provenance, which records the dataset fingerprint, the configuration,
-   and the SHA-256 of the report. See
-   [ADR 0010](docs/adr/0010-trained-models-carry-compact-provenance.md).
+6. Keeps the configured checkpoint: the last epoch, or the epoch with the
+   best validation loss or PR-AUC, optionally stopping early after a number
+   of evaluations without improvement.
+7. Uses the configured threshold, or chooses the one with the highest
+   validation recall whose false positive rate stays within your limit. A
+   score at or above it predicts fraud.
+8. Measures the validation partition and, when configured, scores the test
+   partition once, after everything is frozen
+   ([ADR 0015](docs/adr/0015-selection-uses-validation-only-and-test-is-explicit.md)).
+9. Writes the training report
+   ([`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md)):
+   the configuration and its identity, the dataset report with every
+   exclusion, the partitions, the coverage of populations and availability
+   states, the selection, and the metrics.
+10. Writes the model in model format version 2: the network plus its
+    provenance, which records the dataset fingerprint, the configuration,
+    the selected epoch and threshold, and the SHA-256 of the report. See
+    [ADR 0010](docs/adr/0010-trained-models-carry-compact-provenance.md).
 
 Each file is written to a temporary file first and then renamed, so a
 failure never leaves a partial artifact. An interrupt (SIGINT or SIGTERM)
@@ -186,7 +204,8 @@ a newline:
 |-----------|----------|---------|
 | 0 | `trained` | The model and the report were written. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, and `report_sha256`. |
 | 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, whose `exclusions` list each problem by `line`, `path`, and `code`. Standard error repeats each problem with a message. Nothing is written. |
-| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an unreadable dataset, a train partition without both labels, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+| 3 | `selection_infeasible` | No threshold keeps the validation false positive rate within the configured limit. The object holds `threshold_policy`, `max_false_positive_rate`, and `lowest_achievable_false_positive_rate`. Nothing is written. |
+| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an unreadable dataset, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
 
 ### Limitations
 
@@ -202,8 +221,10 @@ policy.
   standardization they need is not stored until the model artifact format
   of #29, and `predict` reads `pix-risk-v1` inputs only from #31.
 - Training uses the natural class distribution, with no resampling or
-  reweighting, and keeps the last epoch's network. The threshold is the one
-  you configure.
+  reweighting. The checkpoint, early stopping, and threshold follow your
+  configuration; the toolkit never chooses a risk policy for you, and a
+  validation-selected threshold is only as reliable as the validation
+  partition is representative.
 - All usable records are kept in memory, because every epoch uses the whole
   train partition.
 - The same dataset bytes and configuration produce the same model and
