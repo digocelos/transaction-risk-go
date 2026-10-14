@@ -6,8 +6,9 @@ An open-source Go toolkit for learning and building financial transaction fraud 
 - Go 1.27 or later
 - No external dependencies (standard library only)
 
-Run all commands from the repository root. `cmd/demo` and `cmd/predict` read
-and write `model.json` relative to the current directory.
+Run all commands from the repository root. Every command takes its model
+and data paths explicitly; only the educational `cmd/demo` writes
+`model.json` in the current directory.
 
 ## Training the model (`cmd/demo`)
 
@@ -27,6 +28,10 @@ The demo:
 5. Prints the scores after training, then evaluates 4 examples that were
    never used in training. A score `>= 0.5` is predicted as fraud (`1`).
 6. Saves the trained network to `model.json`, overwriting the existing file.
+
+`model.json` uses the educational model format. No other command reads it:
+`predict` scores with a model artifact from `train` and `promote`. The demo
+and its model stay only as a learning aid until they are retired.
 
 Expected output (abridged):
 
@@ -48,66 +53,6 @@ Model saved to model.json
 To experiment, edit `transactions`, `targets`, the hidden layer size, the
 number of epochs or the learning rate in `cmd/demo/main.go`, then run the
 demo again.
-
-## Scoring a Pix payment (`cmd/predict`)
-
-`predict` reads one scoring input: a JSON document that follows the
-[`pix-payer-input-v1` input contract](docs/contracts/pix-payer-input-v1.md).
-It describes a Pix payment that the payer's institution is about to send,
-together with observations about the payer account, the payer device, the
-recipient, and the recipient's Pix key. Your system collects those
-observations; the toolkit never queries DICT or any other source.
-
-```bash
-go run ./cmd/predict docs/contracts/examples/01-complete.json
-```
-
-```
-{"status":"scored","contract_version":"pix-payer-input-v1","feature_schema":"transaction-features-v1","score":0.18734535214416673}
-```
-
-Pass `-`, or no argument, to read the scoring input from standard input:
-
-```bash
-go run ./cmd/predict < docs/contracts/examples/08-no-pix-key.json
-```
-
-The score ranges from 0 (legitimate) to 1 (fraud). It informs your
-decision but is not one: regulatory rules and operational decisions stay in
-your own systems.
-
-`predict` validates the input, converts it to the features of
-`transaction-features-v1`, and scores them with `model.json`, which must
-have been trained with the same feature schema. The repository already
-includes a trained `model.json`, so you can run `predict` without training
-first. Standard output always holds exactly one JSON object, followed by a
-newline:
-
-| Exit code | `status` | Meaning |
-|-----------|----------|---------|
-| 0 | `scored` | The payment was scored. |
-| 2 | `invalid_input` | The document breaks the contract. `issues` lists each problem with a JSON Pointer `path`, a stable `code`, and a `message`. |
-| 3 | `insufficient_input` | The document is valid, but the model cannot score it. `blockers` lists each `path` with a `reason`: `missing`, `stale`, `no_history`, or `not_applicable`. |
-| 1 | none | Operational failure, such as an unreadable file or a missing model. Standard output is empty, and the message goes to standard error. |
-
-The model never guesses missing information. For example, a payer account
-with no settled Pix payments in the last 90 days has no typical amount, so
-the input is insufficient rather than scored with an invented value.
-
-[`docs/contracts/examples/`](docs/contracts/examples/) holds 17 scoring
-inputs, each with its expected result: start from `01-complete.json` and
-change one observation at a time. The model uses four features:
-
-| Feature | Observation | Value sent to the network |
-|---------|-------------|---------------------------|
-| Amount ratio | `pix_payment.amount_cents` and `payer_account.settled_outgoing_pix_90d.median_amount_cents` | amount / median amount / 10 |
-| Recent count | `payer_account.initiated_outgoing_pix_24h.count` | count / 20 |
-| `NewRecipient` | `recipient_person.settled_pix_from_payer_account_365d.count` | `1` if the count is 0, otherwise `0` |
-| `NewDevice` | `payer_device.settled_outgoing_pix_90d.count` | `1` if the count is 0, otherwise `0` |
-
-If `model.json` is missing, run the demo first. If you change the feature
-order or scaling in `transaction/features.go`, update `FeatureSchema` and
-retrain. `predict` rejects a model trained with a different schema.
 
 ## Training from a dataset (`cmd/train`)
 
@@ -304,19 +249,103 @@ again: if you change a model after seeing its results there, that data has
 become validation data, and the changed model needs new held-out data
 ([ADR 0017](docs/adr/0017-saved-models-are-evaluated-read-only-on-an-explicit-scope.md)).
 
-### Limitations
+## Scoring a Pix payment (`cmd/predict`)
 
-Successful training is not production validation. The command shows that
-a dataset can be trained and evaluated reproducibly; it does not show that
-the model detects fraud. The bundled dataset is synthetic and far too small
+`predict` scores one scoring input: a JSON document that follows the
+[`pix-payer-input-v2` input contract](docs/contracts/pix-payer-input-v2.md).
+It describes a Pix payment that the payer's institution is about to send,
+together with observations about the payer account, the payer device, the
+recipient, and the recipient's Pix key. Your system collects those
+observations; the toolkit never queries DICT or any other source.
+
+The model is always explicit: pass the artifact you promoted with `-model`.
+
+```bash
+go run ./cmd/predict -model models/pix-risk.json docs/contracts/examples-v2/04-no-pix-key.json
+```
+
+```
+{"status":"scored","contract_version":"pix-payer-input-v2","model":{"artifact_version":"pix-risk-model-v1","artifact_sha256":"909932dd…","feature_schema":"pix-risk-v1","threshold":{"policy":"fixed","value":0.5}},"score":0.012040875480930998,"notes":[{"path":"/observations/recipient_account/entry","status":"missing"},{"path":"/pix_payment/recipient_key_usage","status":"not_applicable"}]}
+```
+
+Your hashes match only for the same build, and your score can differ in its
+last digits on another CPU architecture. With `-` or no input argument,
+`predict` reads the document from standard input, so any language can run
+it as a subprocess: write the document to its standard input, read one JSON
+line from its standard output, and branch on the exit code.
+
+```bash
+go install ./cmd/predict   # installs predict into $(go env GOPATH)/bin
+predict -model models/pix-risk.json < docs/contracts/examples-v2/01-complete.json
+```
+
+The score ranges from 0 to 1 and ranks payments by risk. It is not a
+calibrated probability, and it informs your decision without being one:
+regulatory rules and operational decisions stay in your own systems. The
+`threshold` in `model` is the one the model was selected with, reported as
+metadata for your own rules.
+
+`predict` loads and validates the model before reading the input, then
+validates the input, prepares its `pix-risk-v1` features exactly as
+training does, and scores them. Standard output always holds exactly one
+JSON object, followed by a newline, and every object identifies the model:
+
+| Exit code | `status` | Meaning |
+|-----------|----------|---------|
+| 0 | `scored` | The payment was scored. `notes` lists each optional observation that was not available, with its `path` and `status`: `missing`, `stale`, `not_applicable`, `no_history`, `zero_limit`, or `unrecognized`. |
+| 2 | `invalid_input` | The document breaks the contract. `issues` lists each problem with a JSON Pointer `path`, a stable `code`, and a `message`. A version 1 document, or a training record with an outcome or group key, is invalid. |
+| 3 | `insufficient_input` | The document is valid, but a required fact is `missing` or `stale`. `blockers` lists each `path` with its `reason`. |
+| 1 | none | Operational failure, such as a missing `-model` flag, a missing or invalid model, or an unreadable file. Standard output is empty, and the message goes to standard error. |
+
+The model never guesses missing information. A required fact, such as the
+payer account's recent payment count, makes the input insufficient when it
+is missing or stale. An optional observation, such as a DICT statistic,
+that is not available is scored with an explicit availability indicator and
+reported in `notes`, never replaced by an invented value.
+[`docs/contracts/examples-v2/`](docs/contracts/examples-v2/) holds 20
+scoring inputs, each with its expected preparation result.
+
+### From Go (`scoring`)
+
+A Go program loads the artifact once and scores any number of documents,
+from any number of goroutines:
+
+```go
+scorer, err := scoring.Load("models/pix-risk.json")
+if err != nil {
+	return err
+}
+
+result, err := scorer.Score(document) // a pix-payer-input-v2 document
+if err != nil {
+	return err // the scorer failed; invalid inputs are results
+}
+
+switch result.Status {
+case scoring.StatusScored:
+	use(*result.Score, result.Notes, result.Model.ArtifactSHA256)
+case scoring.StatusInsufficientInput:
+	report(result.Blockers)
+case scoring.StatusInvalidInput:
+	reject(result.Issues)
+}
+```
+
+The `Scorer` never changes after loading and never trains, refits, or looks
+anything up. [`scoring/example_test.go`](scoring/example_test.go) is a
+complete example that runs with `go test ./scoring/`, generating its
+artifact from the synthetic training fixture.
+
+## Limitations
+
+Successful training is not production validation. The commands show that
+a dataset can be trained, evaluated, and scored reproducibly; they do not
+show that the model detects fraud. The bundled dataset is synthetic and far too small
 for its metrics to mean anything. Before relying on a model, evaluate it on
 a large, representative dataset of mature labels, and review its
 precision, recall, false positives, and missed losses against your own risk
 policy.
 
-- `predict` cannot score with a model artifact yet: it reads
-  `pix-risk-v1` inputs and artifacts only from #31. The artifact already
-  holds everything scoring needs.
 - Training uses the natural class distribution, with no resampling or
   reweighting. The checkpoint, early stopping, and threshold follow your
   configuration; the toolkit never chooses a risk policy for you, and a
@@ -339,5 +368,5 @@ replace the version 1 contracts, and the feature schema
 Pix key, payer device, or limit per period, marking unavailable information
 with explicit indicators instead of refusing to score. The `pixrisk`
 package prepares its 62 features and fits their standardization on the
-train partition only. `cmd/train` and `cmd/evaluate` use version 2;
-`cmd/predict` still uses version 1 until it migrates.
+train partition only. `cmd/train`, `cmd/evaluate`, and `cmd/predict` use
+version 2; no command accepts version 1 any more.

@@ -1,6 +1,6 @@
 # Input contract `pix-payer-input-v2`
 
-**Status:** Normative for `pix-payer-input-v2`. It replaces [`pix-payer-input-v1`](pix-payer-input-v1.md) (ADR 0013); the toolkit keeps decoding version 1 only for the commands that have not migrated yet.
+**Status:** Normative for `pix-payer-input-v2`. It replaces [`pix-payer-input-v1`](pix-payer-input-v1.md) (ADR 0013), and no command accepts version 1 any more.
 
 ## 1. Scope
 
@@ -758,7 +758,19 @@ Examples 02 to 20 each change example 01 as stated.
 
 ## 17. Scoring
 
-`cmd/predict` still reads `pix-payer-input-v1` and rejects version 2 documents with `unsupported_contract_version` until it migrates (#31). Training and scoring with `pix-risk-v1` share the preparation of [section 14](#14-preparation-for-pix-risk-v1).
+The `scoring` package and `cmd/predict` score a document with an explicit [`pix-risk-model-v1`](pix-risk-model-v1.md) artifact (ADR 0018). They validate the document as this specification defines, prepare it as [section 14](#14-preparation-for-pix-risk-v1) defines, exactly as training does, and run the network.
+
+`cmd/predict -model FILE` reads one document from the file named by its only argument, or from standard input when there is no argument or the argument is `-`. For exit codes 0, 2, and 3, standard output holds exactly one compact JSON object followed by a newline, and nothing else. Every object has `model`: the `artifact_version`, the `artifact_sha256` of the artifact's exact bytes, the `feature_schema`, and the `threshold` (`policy` and `value`) the model was selected with.
+
+| Exit code | Status | Members |
+|---|---|---|
+| 0 | `scored` | `status`, `contract_version`, `model`, `score`, and `notes`: the `path` and `status` of each optional observation that was not available (`missing`, `stale`, `not_applicable`, `no_history`, `zero_limit`, or `unrecognized`), sorted by path, as [`pix-risk-v1`](../features/pix-risk-v1.md) reports them. |
+| 2 | `invalid_input` | `status`, `model`, and `issues`, each with `path`, `code`, and `message`. |
+| 3 | `insufficient_input` | `status`, `contract_version`, `model`, and `blockers`, each with `path` and `reason` (`missing` or `stale`). |
+| 1 | None | Standard output is empty. A message goes to standard error: a missing or invalid model, an unreadable input file, wrong command-line usage, or an internal error. Problems of the document always use 2 or 3. |
+
+- The score is a number from 0 to 1, written in the shortest decimal that round-trips its binary64 value. It ranks risk; it is not a calibrated probability and not a decision. The threshold is metadata for the integrator's own decision (ADR 0002).
+- The model is loaded and validated before the document is read, so a missing or invalid model always exits with 1.
 
 ## 18. Migration notes
 

@@ -177,6 +177,9 @@ The values fitted on the train partition, such as standardization means and scal
 **Preparation note**:
 A report that one optional source of a feature is not known, with its path and its status: missing, stale, not applicable, no history, zero limit, or unrecognized.
 
+**Scorer**:
+A model artifact loaded once to score any number of scoring inputs; it never changes after loading.
+
 **Regulatory rule**:
 A mandatory constraint from Pix regulation, such as a transaction limit, evaluated separately from scoring.
 
