@@ -1,9 +1,14 @@
 package nn
 
 import (
+	"context"
 	"fmt"
 	"math"
 )
+
+// cancellationInterval is the number of samples between two checks of the
+// context in TrainBatchContext.
+const cancellationInterval = 1024
 
 // Sample contains model inputs and their expected outputs.
 type Sample struct {
@@ -17,7 +22,15 @@ type Sample struct {
 // TrainBatch changes no parameter unless the whole step is finite: it
 // fails when a parameter, an input, a gradient, or an updated parameter is
 // not finite, and the network keeps its previous parameters.
-func (n *Network) TrainBatch(
+func (n *Network) TrainBatch(samples []Sample, learningRate float64) (float64, error) {
+	return n.TrainBatchContext(context.Background(), samples, learningRate)
+}
+
+// TrainBatchContext is TrainBatch with cancellation: it checks ctx before
+// the first sample and every 1,024 samples, and a canceled step returns
+// ctx's error without changing any parameter.
+func (n *Network) TrainBatchContext(
+	ctx context.Context,
 	samples []Sample,
 	learningRate float64,
 ) (float64, error) {
@@ -95,7 +108,13 @@ func (n *Network) TrainBatch(
 
 	totalLoss := 0.0
 
-	for _, sample := range samples {
+	for index, sample := range samples {
+		if index%cancellationInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
+
 		// Store each layer's activations for backpropagation.
 		activations := make([][]float64, len(n.layers)+1)
 		activations[0] = sample.Inputs

@@ -1,6 +1,8 @@
 package nn
 
 import (
+	"context"
+	"errors"
 	"math"
 	"reflect"
 	"strings"
@@ -252,5 +254,82 @@ func TestCloneIsIndependent(t *testing.T) {
 
 	if !sameParameters(snapshot, clone(smallNetwork(t))) {
 		t.Error("the clone does not hold the original parameters")
+	}
+}
+
+// countingContext counts its checks and is canceled from check cancelAt
+// on, or never when cancelAt is 0.
+type countingContext struct {
+	context.Context
+	checks, cancelAt int
+}
+
+func (c *countingContext) Err() error {
+	c.checks++
+	if c.cancelAt > 0 && c.checks >= c.cancelAt {
+		return context.Canceled
+	}
+	return nil
+}
+
+func cancellationSamples(count int) []Sample {
+	samples := make([]Sample, count)
+	for i := range samples {
+		samples[i] = Sample{Inputs: []float64{float64(i%7) / 7, 1}, Targets: []float64{float64(i % 2)}}
+	}
+	return samples
+}
+
+// TrainBatchContext checks its context before the first sample and every
+// 1,024 samples, so a canceled step stops within 1,024 samples.
+func TestTrainBatchContextChecksEvery1024Samples(t *testing.T) {
+	network, err := NewNetwork(1, 2, 3, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := &countingContext{Context: context.Background()}
+	if _, err := network.TrainBatchContext(ctx, cancellationSamples(3000), 0.5); err != nil {
+		t.Fatal(err)
+	}
+	if ctx.checks != 3 {
+		t.Errorf("checked the context %d times for 3,000 samples, want 3", ctx.checks)
+	}
+}
+
+// A canceled step returns the context's error and changes no parameter.
+func TestTrainBatchContextStopsWithoutChanges(t *testing.T) {
+	for name, cancelAt := range map[string]int{"before the first sample": 1, "within the batch": 2} {
+		t.Run(name, func(t *testing.T) {
+			network, err := NewNetwork(1, 2, 3, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := network.Layers()
+
+			ctx := &countingContext{Context: context.Background(), cancelAt: cancelAt}
+			if _, err := network.TrainBatchContext(ctx, cancellationSamples(3000), 0.5); !errors.Is(err, context.Canceled) {
+				t.Fatalf("TrainBatchContext() error = %v, want context.Canceled", err)
+			}
+			if !reflect.DeepEqual(network.Layers(), before) {
+				t.Error("a canceled step changed the parameters")
+			}
+		})
+	}
+}
+
+// TrainBatch is TrainBatchContext without cancellation.
+func TestTrainBatchIsTrainBatchContext(t *testing.T) {
+	first, err := NewNetwork(4, 2, 3, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := first.Clone()
+	samples := cancellationSamples(50)
+
+	lossA, errA := first.TrainBatch(samples, 0.5)
+	lossB, errB := second.TrainBatchContext(context.Background(), samples, 0.5)
+	if errA != nil || errB != nil || lossA != lossB || !reflect.DeepEqual(first.Layers(), second.Layers()) {
+		t.Errorf("TrainBatch = %v, %v; TrainBatchContext = %v, %v", lossA, errA, lossB, errB)
 	}
 }
