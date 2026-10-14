@@ -24,7 +24,7 @@ func Scan(r io.Reader, schema FeatureSchema, visit func(Record) error) (Summary,
 	counter := &byteCounter{}
 	reader := bufio.NewReaderSize(io.TeeReader(r, io.MultiWriter(hash, counter)), readBufferSize)
 
-	summary := Summary{FeatureSchema: schema.Name}
+	summary := Summary{FeatureSchema: schema.Name, TrainingExampleVersion: schema.TrainingExampleVersion}
 	lines := &lineReader{reader: reader}
 
 	for number := 1; ; number++ {

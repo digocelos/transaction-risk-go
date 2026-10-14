@@ -1,6 +1,8 @@
 // Package trainingdata reads training datasets that follow the
-// pix-training-example-v1 contract: it validates and classifies every
-// record, one line at a time, and fingerprints the exact dataset bytes.
+// pix-training-example-v1 or pix-training-example-v2 contract: it validates
+// and classifies every record, one line at a time, and fingerprints the
+// exact dataset bytes. The feature schema being trained decides which
+// version a dataset must use.
 package trainingdata
 
 import (
@@ -8,14 +10,17 @@ import (
 	"time"
 
 	"github.com/digocelos/transaction-risk-go/pixinput"
+	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"github.com/digocelos/transaction-risk-go/transaction"
 )
 
+// Training example versions this package supports.
 const (
-	// TrainingExampleVersion is the only training example version this
-	// package supports.
-	TrainingExampleVersion = "pix-training-example-v1"
+	TrainingExampleV1 = "pix-training-example-v1"
+	TrainingExampleV2 = "pix-training-example-v2"
+)
 
+const (
 	// MaxRecordSize is the largest record line, in bytes, excluding its LF.
 	MaxRecordSize = 131072
 
@@ -98,16 +103,48 @@ type Record struct {
 }
 
 // FeatureSchema decides whether scoring inputs can produce the features of
-// the model being trained. Blockers returns nil when the input converts, and
-// paths relative to the scoring input otherwise.
+// the model being trained. A dataset for it uses TrainingExampleVersion,
+// whose records embed ContractVersion scoring inputs. Blockers returns nil
+// when the input converts, and paths relative to the scoring input
+// otherwise.
 type FeatureSchema struct {
-	Name     string
-	Blockers func(pixinput.ScoringInput) ([]Blocker, error)
+	Name                   string
+	TrainingExampleVersion string
+	ContractVersion        string
+	Blockers               func(pixinput.ScoringInput) ([]Blocker, error)
 }
 
-// TransactionFeaturesV1 classifies scoring inputs with transaction-features-v1.
+// PixRiskV1 classifies pix-training-example-v2 records with pix-risk-v1: a
+// record is insufficient when a required fact is missing or stale.
+var PixRiskV1 = FeatureSchema{
+	Name:                   pixrisk.Schema,
+	TrainingExampleVersion: TrainingExampleV2,
+	ContractVersion:        pixinput.ContractV2,
+	Blockers: func(input pixinput.ScoringInput) ([]Blocker, error) {
+		_, err := pixrisk.Prepare(input)
+
+		var insufficient *pixrisk.InsufficientInputError
+		switch {
+		case errors.As(err, &insufficient):
+			blockers := make([]Blocker, len(insufficient.Blockers))
+			for i, blocker := range insufficient.Blockers {
+				blockers[i] = Blocker{Path: blocker.Path, Reason: blocker.Reason}
+			}
+			return blockers, nil
+		case err != nil:
+			return nil, err
+		}
+
+		return nil, nil
+	},
+}
+
+// TransactionFeaturesV1 classifies pix-training-example-v1 records with
+// transaction-features-v1.
 var TransactionFeaturesV1 = FeatureSchema{
-	Name: transaction.FeatureSchema,
+	Name:                   transaction.FeatureSchema,
+	TrainingExampleVersion: TrainingExampleV1,
+	ContractVersion:        pixinput.ContractV1,
 	Blockers: func(input pixinput.ScoringInput) ([]Blocker, error) {
 		_, err := transaction.FromScoringInput(input)
 

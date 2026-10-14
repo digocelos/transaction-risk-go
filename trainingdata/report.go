@@ -20,11 +20,12 @@ type LabelCounts struct {
 
 // Summary describes a scanned dataset without listing its records.
 type Summary struct {
-	FeatureSchema string
-	DatasetSHA256 string
-	DatasetBytes  int64
-	Records       Counts
-	UsableLabels  LabelCounts
+	FeatureSchema          string
+	TrainingExampleVersion string
+	DatasetSHA256          string
+	DatasetBytes           int64
+	Records                Counts
+	UsableLabels           LabelCounts
 }
 
 func (s *Summary) add(record Record) {
@@ -100,7 +101,7 @@ func NewReport(summary Summary, exclusions []Exclusion) Report {
 
 	return Report{
 		DatasetReportVersion:   DatasetReportVersion,
-		TrainingExampleVersion: TrainingExampleVersion,
+		TrainingExampleVersion: summary.TrainingExampleVersion,
 		FeatureSchema:          summary.FeatureSchema,
 		LabelMaturityDays:      int(LabelMaturity.Hours() / 24),
 		DatasetSHA256:          summary.DatasetSHA256,
