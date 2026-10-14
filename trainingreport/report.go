@@ -3,8 +3,8 @@
 // docs/contracts/pix-training-report-v2.md: the configuration and its
 // identity, the dataset report, the temporal partitions, the coverage of
 // populations and availability states, the model selection, and the
-// validation and test metrics. A trained model binds its report by the
-// SHA-256 of the exact report bytes (ADR 0010).
+// validation and test metrics. The model artifact binds its report by the
+// SHA-256 of the exact report bytes (ADR 0016).
 package trainingreport
 
 import (
@@ -14,7 +14,6 @@ import (
 	"math"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
-	"github.com/digocelos/transaction-risk-go/nn"
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
@@ -188,35 +187,6 @@ func Marshal(report Report) ([]byte, error) {
 	}
 
 	return append(data, '\n'), nil
-}
-
-// Provenance returns the model provenance that a report describes, binding
-// the report by reportSHA256. The epochs are those of the selected
-// checkpoint, and the threshold is the selected one.
-func Provenance(report Report, reportSHA256 string) nn.Provenance {
-	config := report.Configuration.Config
-	records := report.Dataset.Records
-
-	return nn.Provenance{
-		Algorithm:              config.Algorithm,
-		Seed:                   config.Seed,
-		Epochs:                 report.Selection.SelectedEpoch,
-		LearningRate:           config.LearningRate,
-		TrainingExampleVersion: report.Dataset.TrainingExampleVersion,
-		DatasetSHA256:          report.Dataset.DatasetSHA256,
-		DatasetBytes:           report.Dataset.DatasetBytes,
-		Records: nn.RecordCounts{
-			Total:        records.Total,
-			Usable:       records.Usable,
-			Invalid:      records.Invalid,
-			Insufficient: records.Insufficient,
-			Immature:     records.Immature,
-		},
-		TrainEnd:      report.Partitions.TrainEnd,
-		ValidationEnd: report.Partitions.ValidationEnd,
-		Threshold:     report.Selection.Threshold.Value,
-		ReportSHA256:  reportSHA256,
-	}
 }
 
 func validate(report Report) error {

@@ -233,3 +233,14 @@ Identifies the shape and meaning of an input contract.
 
 **Model format version**:
 Identifies the layout of a saved model file, independent of the feature schema the model was trained on.
+
+**Model artifact**:
+A saved trained model with everything needed to score without training: its parameters, feature descriptor, preparation state, selection, and the identities of what produced it.
+_Avoid_: Model file, weights
+
+**Training run**:
+A published directory holding a model artifact, its training report, its configuration, and a manifest that binds them; it exists completely or not at all.
+
+**Promotion**:
+The explicit step that verifies a training run and makes its model artifact available for scoring; training alone never promotes.
+_Avoid_: Deployment, release

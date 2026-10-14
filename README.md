@@ -121,14 +121,15 @@ schema [`pix-risk-v1`](docs/features/pix-risk-v1.md), and a
 configuration fixes everything else about the run.
 
 ```bash
+mkdir -p runs
 go run ./cmd/train \
   -config docs/contracts/training-config-examples/01-baseline.json \
   -dataset training/testdata/pix-risk-v1.jsonl \
-  -model-output trained-model.json \
-  -report-output training-report.json
+  -run-dir runs/first
 ```
 
-Every flag is required. `training/testdata/pix-risk-v1.jsonl` holds 8 small
+Every flag is required, and the parent of `-run-dir` must exist.
+`training/testdata/pix-risk-v1.jsonl` holds 8 small
 synthetic records for trying the command, and
 [`docs/contracts/training-config-examples/`](docs/contracts/training-config-examples/)
 holds configurations to start from, such as
@@ -183,29 +184,54 @@ holds configurations to start from, such as
 8. Measures the validation partition and, when configured, scores the test
    partition once, after everything is frozen
    ([ADR 0015](docs/adr/0015-selection-uses-validation-only-and-test-is-explicit.md)).
-9. Writes the training report
-   ([`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md)):
-   the configuration and its identity, the dataset report with every
-   exclusion, the partitions, the coverage of populations and availability
-   states, the selection, and the metrics.
-10. Writes the model in model format version 2: the network plus its
-    provenance, which records the dataset fingerprint, the configuration,
-    the selected epoch and threshold, and the SHA-256 of the report. See
-    [ADR 0010](docs/adr/0010-trained-models-carry-compact-provenance.md).
+9. Publishes the run directory given by `-run-dir`
+   ([`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run)):
+   - `model.json`, the model artifact
+     ([`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md)): the
+     network, the feature descriptor and fitted preparation state, the
+     selected epoch and threshold, and the identities of the configuration,
+     dataset, report, and software build;
+   - `report.json`, the training report
+     ([`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md)):
+     the configuration and its identity, the dataset report with every
+     exclusion, the partitions, the coverage of populations and
+     availability states, the selection, and the metrics;
+   - `config.json`, the canonical configuration;
+   - `manifest.json`, which binds the three files by SHA-256.
 
-Each file is written to a temporary file first and then renamed, so a
-failure never leaves a partial artifact. An interrupt (SIGINT or SIGTERM)
-cancels the run within one epoch, or within 1,024 records while reading,
-and nothing is written. Progress, including the training loss, goes to
+The run is written to a staging directory, read back and verified, and
+published with a single rename, so it exists completely or not at all; an
+existing directory is never overwritten
+([ADR 0016](docs/adr/0016-trained-models-are-published-as-verified-runs.md)).
+An interrupt (SIGINT or SIGTERM) cancels the run within one epoch, or within
+1,024 records while reading, and nothing is written. Progress, including the training loss, goes to
 standard error. Standard output holds exactly one JSON object, followed by
 a newline:
 
 | Exit code | `status` | Meaning |
 |-----------|----------|---------|
-| 0 | `trained` | The model and the report were written. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, and `report_sha256`. |
+| 0 | `trained` | The run was published. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, `report_sha256`, and `config_sha256`. |
 | 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, whose `exclusions` list each problem by `line`, `path`, and `code`. Standard error repeats each problem with a message. Nothing is written. |
 | 3 | `selection_infeasible` | No threshold keeps the validation false positive rate within the configured limit. The object holds `threshold_policy`, `max_false_positive_rate`, and `lowest_achievable_false_positive_rate`. Nothing is written. |
-| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an unreadable dataset, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an existing run directory, an unreadable dataset, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+
+## Promoting a model (`cmd/promote`)
+
+A finished run is not an accepted model. After reviewing its report,
+promote its artifact to the place your scorer reads it from:
+
+```bash
+mkdir -p models
+go run ./cmd/promote -run runs/first -output models/pix-risk.json
+```
+
+`promote` verifies the run completely: every file against the manifest, the
+artifact, and the bindings between the model, the report, and the
+configuration. It then writes the artifact through a temporary file and a
+rename, and prints `{"status":"promoted","model_sha256":"…"}`. An existing
+output is replaced only with `-replace`. Any failure exits with code 1 and
+writes nothing. The SHA-256 values detect changed files; they are not
+signatures and do not show who produced a model.
 
 ### Limitations
 
@@ -217,9 +243,9 @@ a large, representative dataset of mature labels, and review its
 precision, recall, false positives, and missed losses against your own risk
 policy.
 
-- Models trained by `train` cannot score payments yet: the feature
-  standardization they need is not stored until the model artifact format
-  of #29, and `predict` reads `pix-risk-v1` inputs only from #31.
+- `predict` cannot score with a model artifact yet: it reads
+  `pix-risk-v1` inputs and artifacts only from #31. The artifact already
+  holds everything scoring needs.
 - Training uses the natural class distribution, with no resampling or
   reweighting. The checkpoint, early stopping, and threshold follow your
   configuration; the toolkit never chooses a risk policy for you, and a

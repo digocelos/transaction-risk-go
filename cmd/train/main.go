@@ -11,15 +11,16 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
+	"github.com/digocelos/transaction-risk-go/modelartifact"
 	"github.com/digocelos/transaction-risk-go/training"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
+	"github.com/digocelos/transaction-risk-go/trainingrun"
 )
 
 // Exit codes. A dataset with invalid records always uses 2, and a
@@ -37,6 +38,7 @@ type trainedOutput struct {
 	Records       trainingdata.Counts `json:"records"`
 	ModelSHA256   string              `json:"model_sha256"`
 	ReportSHA256  string              `json:"report_sha256"`
+	ConfigSHA256  string              `json:"config_sha256"`
 }
 
 type infeasibleOutput struct {
@@ -51,12 +53,14 @@ type invalidOutput struct {
 	Dataset trainingdata.Report `json:"dataset"`
 }
 
-const usage = `usage: train -config FILE -dataset FILE -model-output FILE -report-output FILE
+const usage = `usage: train -config FILE -dataset FILE -run-dir DIR
 
 Trains the network a pix-training-config-v2 configuration describes on the
 train partition of a pix-training-example-v2 dataset, prepared with
-pix-risk-v1, evaluates the validation and test partitions, and writes the
-model and its training report. Every flag is required.
+pix-risk-v1, selects it on the validation partition, and publishes a run
+directory: the pix-risk-model-v1 artifact, the training report, the
+canonical configuration, and a manifest. DIR must not exist. Training
+never promotes a model; see promote. Every flag is required.
 `
 
 func main() {
@@ -68,7 +72,7 @@ func main() {
 
 // options are the parsed command-line flags.
 type options struct {
-	config, dataset, modelOutput, reportOutput string
+	config, dataset, runDir string
 }
 
 // run trains a model from the flags in args. The result goes to stdout as
@@ -161,8 +165,18 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 
 	reportSHA256 := sha256Hex(reportData)
-	modelData, err := result.Network.MarshalWithProvenance(config.FeatureSchema,
-		trainingreport.Provenance(report, reportSHA256))
+	artifact, err := modelartifact.FromTraining(result.Network, result.State, report, reportSHA256,
+		modelartifact.SoftwareFromBuild())
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	modelData, err := modelartifact.Marshal(artifact)
+	if err != nil {
+		return fail("%v", err)
+	}
+
+	configData, err := config.Canonical()
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -172,14 +186,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return fail("canceled; nothing was written")
 	}
 
-	// The report is written first: the model binds it by hash.
-	if err := writeAtomically(
-		artifact{opts.reportOutput, reportData},
-		artifact{opts.modelOutput, modelData},
-	); err != nil {
+	bundle := trainingrun.Bundle{Model: modelData, Report: reportData, Config: configData}
+	if err := trainingrun.Publish(opts.runDir, bundle); err != nil {
 		return fail("%v", err)
 	}
-	fmt.Fprintf(stderr, "train: wrote %s and %s\n", opts.reportOutput, opts.modelOutput)
+	fmt.Fprintf(stderr, "train: published run %s\n", opts.runDir)
 
 	return write(stdout, stderr, exitTrained, trainedOutput{
 		Status:        "trained",
@@ -187,6 +198,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		Records:       report.Dataset.Records,
 		ModelSHA256:   sha256Hex(modelData),
 		ReportSHA256:  reportSHA256,
+		ConfigSHA256:  artifact.Training.ConfigSHA256,
 	})
 }
 
@@ -200,8 +212,7 @@ func readConfig(path string) (trainingconfig.Config, error) {
 	return trainingconfig.Read(file)
 }
 
-// parse reads and checks the flags. Every flag is required, and the two
-// outputs must differ from each other and from both inputs.
+// parse reads and checks the flags. Every flag is required.
 func parse(args []string, stderr io.Writer) (options, error) {
 	var opts options
 
@@ -214,8 +225,7 @@ func parse(args []string, stderr io.Writer) (options, error) {
 
 	fs.StringVar(&opts.config, "config", "", "pix-training-config-v2 configuration `file`")
 	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
-	fs.StringVar(&opts.modelOutput, "model-output", "", "`file` to write the trained model to")
-	fs.StringVar(&opts.reportOutput, "report-output", "", "`file` to write the training report to")
+	fs.StringVar(&opts.runDir, "run-dir", "", "run `directory` to publish; it must not exist")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -238,29 +248,11 @@ func parse(args []string, stderr io.Writer) (options, error) {
 		return options{}, fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
 
-	switch {
-	case samePath(opts.modelOutput, opts.reportOutput):
-		return options{}, errors.New("-model-output and -report-output must be different files")
-	case samePath(opts.modelOutput, opts.dataset), samePath(opts.reportOutput, opts.dataset):
-		return options{}, errors.New("an output must not overwrite the dataset")
-	case samePath(opts.modelOutput, opts.config), samePath(opts.reportOutput, opts.config):
-		return options{}, errors.New("an output must not overwrite the configuration")
+	if _, err := os.Lstat(opts.runDir); err == nil {
+		return options{}, fmt.Errorf("-run-dir %s already exists; runs are never overwritten", opts.runDir)
 	}
 
 	return opts, nil
-}
-
-// samePath reports whether two paths name the same file.
-func samePath(a, b string) bool {
-	absA, errA := filepath.Abs(a)
-	absB, errB := filepath.Abs(b)
-	if errA == nil && errB == nil && absA == absB {
-		return true
-	}
-
-	infoA, errA := os.Stat(a)
-	infoB, errB := os.Stat(b)
-	return errA == nil && errB == nil && os.SameFile(infoA, infoB)
 }
 
 func logPartitions(stderr io.Writer, records trainingdata.Counts, partitions evaluation.PartitionReport) {
@@ -278,69 +270,6 @@ func logPartitions(stderr io.Writer, records trainingdata.Counts, partitions eva
 		fmt.Fprintf(stderr, "train: %s partition: %d fraud, %d legitimate usable records\n",
 			p.name, p.counts.Fraud, p.counts.Legitimate)
 	}
-}
-
-// artifact is a file to write.
-type artifact struct {
-	path string
-	data []byte
-}
-
-// writeAtomically writes each artifact in full to a temporary file in its
-// directory and syncs it before renaming any of them into place, in order.
-// A failure leaves no partial file: each path keeps its previous content
-// or receives its complete new content.
-func writeAtomically(artifacts ...artifact) error {
-	temporary := make([]string, 0, len(artifacts))
-	defer func() {
-		for _, name := range temporary {
-			if name != "" {
-				os.Remove(name)
-			}
-		}
-	}()
-
-	for _, a := range artifacts {
-		name, err := writeTemporary(a)
-		if err != nil {
-			return err
-		}
-		temporary = append(temporary, name)
-	}
-
-	for i, a := range artifacts {
-		if err := os.Rename(temporary[i], a.path); err != nil {
-			return fmt.Errorf("write %s: %w", a.path, err)
-		}
-		temporary[i] = ""
-	}
-
-	return nil
-}
-
-func writeTemporary(a artifact) (string, error) {
-	file, err := os.CreateTemp(filepath.Dir(a.path), "."+filepath.Base(a.path)+".tmp-*")
-	if err != nil {
-		return "", fmt.Errorf("write %s: %w", a.path, err)
-	}
-
-	_, err = file.Write(a.data)
-	if err == nil {
-		err = file.Chmod(0o644)
-	}
-	if err == nil {
-		err = file.Sync()
-	}
-	if closeErr := file.Close(); err == nil {
-		err = closeErr
-	}
-
-	if err != nil {
-		os.Remove(file.Name())
-		return "", fmt.Errorf("write %s: %w", a.path, err)
-	}
-
-	return file.Name(), nil
 }
 
 func sha256Hex(data []byte) string {

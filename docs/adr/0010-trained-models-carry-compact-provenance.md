@@ -17,3 +17,5 @@ The inference artifact therefore states which dataset bytes and configuration pr
 - The report must be written before the model, because the model records the report's hash.
 
 Refined by [ADR 0015](0015-selection-uses-validation-only-and-test-is-explicit.md): the report is now `pix-training-report-v2`, and the provenance records the selected epoch and threshold.
+
+Superseded by [ADR 0016](0016-trained-models-are-published-as-verified-runs.md): trained models are `pix-risk-model-v1` artifacts published as verified runs; model format version 2 is no longer written or read.

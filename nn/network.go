@@ -122,3 +122,67 @@ func (n *Network) Clone() *Network {
 
 	return copied
 }
+
+// Layer holds the parameters of one dense layer: one row of weights per
+// neuron, one weight per input, and one bias per neuron.
+type Layer struct {
+	Weights [][]float64 `json:"weights"`
+	Biases  []float64   `json:"biases"`
+}
+
+// InputSize returns the number of inputs the network takes.
+func (n *Network) InputSize() int {
+	return n.inputSize
+}
+
+// Layers returns a copy of the network parameters, in layer order.
+func (n *Network) Layers() []Layer {
+	layers := make([]Layer, len(n.layers))
+	for i, layer := range n.Clone().layers {
+		layers[i] = Layer{Weights: layer.weights, Biases: layer.biases}
+	}
+	return layers
+}
+
+// FromLayers builds a network from its parameters. It requires at least one
+// layer, at least one neuron per layer, as many weights per neuron as the
+// previous layer has outputs, and finite parameters. The network keeps a
+// copy of the parameters.
+func FromLayers(inputSize int, layers []Layer) (*Network, error) {
+	if inputSize <= 0 || len(layers) == 0 {
+		return nil, fmt.Errorf("invalid network dimensions")
+	}
+
+	network := &Network{inputSize: inputSize, layers: make([]denseLayer, len(layers))}
+	expectedInputs := inputSize
+
+	for i, layer := range layers {
+		if len(layer.Biases) == 0 || len(layer.Weights) != len(layer.Biases) {
+			return nil, fmt.Errorf("layer %d: invalid neuron count", i)
+		}
+
+		for neuron, weights := range layer.Weights {
+			if len(weights) != expectedInputs {
+				return nil, fmt.Errorf("layer %d, neuron %d: expected %d weights, got %d",
+					i, neuron, expectedInputs, len(weights))
+			}
+
+			for _, weight := range weights {
+				if math.IsNaN(weight) || math.IsInf(weight, 0) {
+					return nil, fmt.Errorf("weights must be finite")
+				}
+			}
+		}
+
+		for _, bias := range layer.Biases {
+			if math.IsNaN(bias) || math.IsInf(bias, 0) {
+				return nil, fmt.Errorf("biases must be finite")
+			}
+		}
+
+		network.layers[i] = denseLayer{weights: layer.Weights, biases: layer.Biases}
+		expectedInputs = len(layer.Biases)
+	}
+
+	return network.Clone(), nil
+}

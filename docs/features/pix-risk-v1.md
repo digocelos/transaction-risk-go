@@ -27,7 +27,7 @@ Each identifier changes for its own reasons and is recorded separately (ADR 0003
 | Preparation state | The values fitted on the train partition for one model ([section 11](#11-fitted-standardization)). It has no version of its own: its layout belongs to `pix-risk-v1`. | This document. |
 | Training configuration | Architecture, optimizer, epochs, boundaries, selection policy. | #27. |
 | Training report | Dataset, partition, coverage, and metric results of a run. | #28. |
-| Model artifact format | The saved file holding parameters, the feature descriptor, and the preparation state. | #29. |
+| Model artifact format | The saved file holding parameters, the feature descriptor, and the preparation state. | [`pix-risk-model-v1`](../contracts/pix-risk-model-v1.md). |
 
 A feature schema version says nothing about a model's quality, and an artifact format version says nothing about the features it carries.
 
@@ -370,7 +370,7 @@ scale_j = std_j, or 1 when std_j is exactly 0
 
 **Applying.** The final value of standardized feature `j` is `(x − mean_j) / scale_j` when it is available, and exactly `0` when it is not. Standardization never turns an unavailable feature into a non-zero value.
 
-**Preparation state.** The fitted state of a model is `pix-risk-v1`, the list of 62 feature names in order, and, for each standardized feature, `mean`, `scale`, and whether it was `constant_in_train`. It is frozen before the validation partition is scored and stored with the model artifact (#29). Preparation for training, evaluation, and inference uses the same code and the same state, so the same input always produces the same vector.
+**Preparation state.** The fitted state of a model is `pix-risk-v1`, the list of 62 feature names in order, and, for each standardized feature, `mean`, `scale`, and whether it was `constant_in_train`. It is frozen before the validation partition is scored and stored in the model artifact ([`pix-risk-model-v1`](../contracts/pix-risk-model-v1.md)). Preparation for training, evaluation, and inference uses the same code and the same state, so the same input always produces the same vector.
 
 ## 12. Vocabularies
 
