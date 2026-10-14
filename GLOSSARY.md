@@ -251,6 +251,18 @@ The training dataset of a model, supplied to measure group overlap when another 
 An evaluation whose scope cannot support some metrics, because it has no usable examples, no fraud, no legitimate payments, or frauds with an unknown loss; it is reported, never treated as a quality pass.
 _Avoid_: Failed evaluation
 
+## Operations
+
+**Supported envelope**:
+The dataset sizes, training work, and file sizes the toolkit accepts by default, set from measurements on reference hardware; work beyond it is refused, not attempted.
+
+**Training work**:
+The number of network parameters times the samples a run passes through the network: train records times the maximum epochs, plus validation records times the validation evaluations.
+
+**Synthetic dataset**:
+A generated dataset with realistic shapes, class imbalance, and absence patterns, used to measure and try the toolkit; it is not payment data, and a model trained on it detects nothing.
+_Avoid_: Sample data, test data (when real data is meant)
+
 ## Versions
 
 **Contract version**:

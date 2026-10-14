@@ -14,7 +14,7 @@ The SHA-256 values in an artifact and a manifest detect accidental or deliberate
 
 ## 2. Model artifact
 
-The artifact is one JSON object, indented with two spaces and followed by a newline. The same inputs produce the same bytes, and no value comes from the system clock. It is decoded strictly: valid UTF-8, no duplicate or unknown members, no trailing data.
+The artifact is one JSON object, indented with two spaces and followed by a newline. The same inputs produce the same bytes, and no value comes from the system clock. It is at most 16 MiB, more than twice the largest architecture, and a larger file is refused without being read past the limit. It is decoded strictly: valid UTF-8, no duplicate or unknown members, no trailing data.
 
 | Member | Content |
 |---|---|
@@ -50,7 +50,7 @@ The manifest is one JSON object, decoded strictly:
 | `manifest_version` | `pix-risk-run-v1`. |
 | `files` | Exactly `model.json`, `report.json`, and `config.json`, in that order, each with `path`, `sha256`, and `bytes`. |
 
-A run is valid when every file matches its manifest entry, the directory holds no other file, the artifact decodes, the configuration decodes and is canonical, and the files bind each other: the artifact's `report_sha256` is the report's SHA-256; the artifact, the report, and the configuration name the same `config_sha256`; and the artifact and the report name the same dataset, selected epoch, and threshold.
+Verification reads the manifest only up to 64 KiB, refuses a model or configuration whose manifest entry exceeds its size limit before reading it, and reads no file past its manifest entry. A run is valid when every file matches its manifest entry, the directory holds no other file, the artifact decodes, the configuration decodes and is canonical, and the files bind each other: the artifact's `report_sha256` is the report's SHA-256; the artifact, the report, and the configuration name the same `config_sha256`; and the artifact and the report name the same dataset, selected epoch, and threshold.
 
 ## 4. Publishing
 
