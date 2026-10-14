@@ -1,42 +1,30 @@
-// Package training trains the transaction risk baseline from a
-// pix-training-example-v1 dataset and evaluates it with the temporal
-// evaluation protocol: the network is fitted on the train partition only,
-// then the validation and test partitions are each scored once at a fixed
-// threshold. PrepareDataset prepares pix-training-example-v2 datasets with
-// pix-risk-v1, fitting the preparation state on the train partition only.
-// It never reads the system clock or shuffles records.
+// Package training trains a payer-side Pix fraud model from a
+// pix-training-example-v2 dataset, as a pix-training-config-v1
+// configuration describes, and evaluates it with the temporal evaluation
+// protocol: the preparation state and the network are fitted on the train
+// partition only, then the validation and test partitions are each scored
+// once at a fixed threshold. It never reads the system clock or shuffles
+// records.
 package training
 
 import (
-	"errors"
+	"context"
 	"fmt"
 	"io"
-	"math"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
 	"github.com/digocelos/transaction-risk-go/nn"
+	"github.com/digocelos/transaction-risk-go/pixrisk"
+	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
-	"github.com/digocelos/transaction-risk-go/transaction"
 )
 
-// HiddenNeurons is the size of the baseline's hidden layer: the network is
-// 4-4-1, as in cmd/demo.
-const HiddenNeurons = 4
-
-// Config is a training run configuration. Every value is explicit; none
-// has a default.
-type Config struct {
-	Boundaries   evaluation.Boundaries
-	Seed         int64
-	Epochs       int
-	LearningRate float64
-	Threshold    float64
-}
-
-// Result is a trained network and the report of its run.
+// Result is a trained network, the preparation state it expects, and the
+// report of its run.
 type Result struct {
 	Network *nn.Network
+	State   pixrisk.State
 	Report  trainingreport.Report
 }
 
@@ -64,123 +52,63 @@ func (e *UntrainableError) Error() string {
 		"training needs at least one of each", e.Train.Fraud, e.Train.Legitimate)
 }
 
-// example is a usable record reduced to what training and evaluation read.
-type example struct {
-	features        [transaction.FeatureCount]float64
-	label           trainingdata.Label
-	amountCents     int64
-	lossAmountCents *int64
-}
-
-// Run reads and classifies every record of a dataset, trains the baseline
-// on the usable train records, and evaluates the validation and test
-// partitions. progress, when not nil, receives the training loss of each
-// epoch, measured before that epoch's update. The configuration is
-// validated before the dataset is read.
-func Run(dataset io.Reader, config Config, progress func(epoch int, loss float64)) (Result, error) {
-	if err := validate(config); err != nil {
-		return Result{}, err
+// Run validates the configuration, prepares the dataset with pix-risk-v1,
+// trains the configured network on the usable train records in line order
+// for MaxEpochs full-batch epochs, and evaluates the validation and test
+// partitions at the fixed threshold. progress, when not nil, receives the
+// training loss of each epoch, measured before that epoch's update. ctx is
+// checked every 1,024 records while reading and before every epoch; a
+// canceled run returns ctx's error and no result.
+func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, progress func(epoch int, loss float64)) (Result, error) {
+	if err := config.Validate(); err != nil {
+		return Result{}, fmt.Errorf("invalid training configuration: %w", err)
 	}
 
-	partitioner, err := evaluation.NewPartitioner(config.Boundaries)
+	prepared, err := PrepareDataset(ctx, dataset, config.Boundaries())
 	if err != nil {
 		return Result{}, err
 	}
 
-	examples := map[evaluation.Partition][]example{}
-	var exclusions []trainingdata.Exclusion
-	var diagnostics []trainingdata.Diagnostic
-
-	summary, err := trainingdata.Scan(dataset, trainingdata.TransactionFeaturesV1,
-		func(record trainingdata.Record) error {
-			if exclusion, ok := record.Exclusion(); ok {
-				exclusions = append(exclusions, exclusion)
-			}
-			diagnostics = append(diagnostics, record.Diagnostics...)
-
-			partition, ok := partitioner.Add(record)
-			if !ok || record.Category != trainingdata.Usable {
-				return nil
-			}
-
-			features, err := transaction.FromScoringInput(record.Example.ScoringInput)
-			if err != nil {
-				return fmt.Errorf("line %d: %w", record.Line, err)
-			}
-
-			examples[partition] = append(examples[partition], example{
-				features:        features,
-				label:           record.Example.Outcome.Label,
-				amountCents:     record.Example.ScoringInput.PixPayment.AmountCents,
-				lossAmountCents: record.Example.Outcome.LossAmountCents,
-			})
-			return nil
-		})
+	network, err := train(ctx, prepared.Train, config, progress)
 	if err != nil {
 		return Result{}, err
 	}
 
-	datasetReport := trainingdata.NewReport(summary, exclusions)
-	if summary.Records.Invalid > 0 {
-		return Result{}, &InvalidDatasetError{Report: datasetReport, Diagnostics: diagnostics}
-	}
-
-	partitions := partitioner.Report()
-	if partitions.Train.Fraud == 0 || partitions.Train.Legitimate == 0 {
-		return Result{}, &UntrainableError{Train: partitions.Train}
-	}
-
-	network, err := train(examples[evaluation.Train], config, progress)
-	if err != nil {
-		return Result{}, err
-	}
-
-	validation, err := evaluate(network, examples[evaluation.Validation], config.Threshold)
+	validation, err := evaluate(network, prepared.Validation, config.Threshold.Value)
 	if err != nil {
 		return Result{}, fmt.Errorf("evaluate validation partition: %w", err)
 	}
 
-	test, err := evaluate(network, examples[evaluation.Test], config.Threshold)
+	test, err := evaluate(network, prepared.Test, config.Threshold.Value)
 	if err != nil {
 		return Result{}, fmt.Errorf("evaluate test partition: %w", err)
 	}
 
 	return Result{
 		Network: network,
+		State:   prepared.State,
 		Report: trainingreport.Report{
 			Configuration: trainingreport.Configuration{
-				Algorithm:     nn.AlgorithmFullBatchGradientDescent,
-				FeatureSchema: transaction.FeatureSchema,
+				Algorithm:     config.Algorithm,
+				FeatureSchema: config.FeatureSchema,
 				Seed:          config.Seed,
-				Epochs:        config.Epochs,
+				Epochs:        config.MaxEpochs,
 				LearningRate:  config.LearningRate,
-				Threshold:     config.Threshold,
+				Threshold:     config.Threshold.Value,
 			},
-			Dataset:    datasetReport,
-			Partitions: partitions,
+			Dataset:    prepared.Dataset,
+			Partitions: prepared.Partitions,
 			Validation: validation,
 			Test:       test,
 		},
 	}, nil
 }
 
-func validate(config Config) error {
-	switch {
-	case config.Epochs < 1:
-		return errors.New("epochs must be at least 1")
-	case !(config.LearningRate > 0) || math.IsInf(config.LearningRate, 0):
-		return errors.New("learning rate must be finite and positive")
-	case !(config.Threshold >= 0 && config.Threshold <= 1):
-		return errors.New("threshold must be a number from 0 to 1")
-	}
-
-	return nil
-}
-
-// train fits a new baseline network with full-batch gradient descent, in
-// dataset order.
-func train(examples []example, config Config, progress func(int, float64)) (*nn.Network, error) {
-	network, err := nn.NewNetwork(config.Seed, transaction.FeatureCount, HiddenNeurons, 1)
+// train fits a new network with full-batch gradient descent, in dataset
+// order. TrainBatch fails without changing the network when a step
+// diverges.
+func train(ctx context.Context, examples []PreparedExample, config trainingconfig.Config, progress func(int, float64)) (*nn.Network, error) {
+	network, err := nn.NewNetwork(config.Seed, config.Sizes()...)
 	if err != nil {
 		return nil, err
 	}
@@ -188,14 +116,18 @@ func train(examples []example, config Config, progress func(int, float64)) (*nn.
 	samples := make([]nn.Sample, len(examples))
 	for i, example := range examples {
 		target := 0.0
-		if example.label == trainingdata.Fraud {
+		if example.Label == trainingdata.Fraud {
 			target = 1
 		}
 
-		samples[i] = nn.Sample{Inputs: examples[i].features[:], Targets: []float64{target}}
+		samples[i] = nn.Sample{Inputs: example.Values, Targets: []float64{target}}
 	}
 
-	for epoch := 0; epoch < config.Epochs; epoch++ {
+	for epoch := 0; epoch < config.MaxEpochs; epoch++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		loss, err := network.TrainBatch(samples, config.LearningRate)
 		if err != nil {
 			return nil, fmt.Errorf("train epoch %d: %w", epoch, err)
@@ -210,20 +142,20 @@ func train(examples []example, config Config, progress func(int, float64)) (*nn.
 }
 
 // evaluate scores the examples of one partition and measures them.
-func evaluate(network *nn.Network, examples []example, threshold float64) (evaluation.Metrics, error) {
+func evaluate(network *nn.Network, examples []PreparedExample, threshold float64) (evaluation.Metrics, error) {
 	predictions := make([]evaluation.Prediction, len(examples))
 
 	for i, example := range examples {
-		outputs, err := network.Predict(example.features[:])
+		outputs, err := network.Predict(example.Values)
 		if err != nil {
 			return evaluation.Metrics{}, err
 		}
 
 		predictions[i] = evaluation.Prediction{
 			Score:           outputs[0],
-			Label:           example.label,
-			AmountCents:     example.amountCents,
-			LossAmountCents: example.lossAmountCents,
+			Label:           example.Label,
+			AmountCents:     example.AmountCents,
+			LossAmountCents: example.LossAmountCents,
 		}
 	}
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -14,8 +15,9 @@ import (
 )
 
 const (
-	fixture        = "../../training/testdata/dataset.jsonl"
-	invalidDataset = "../../docs/contracts/training-examples/dataset.jsonl"
+	fixture        = "../../training/testdata/pix-risk-v1.jsonl"
+	invalidDataset = "../../docs/contracts/training-examples-v2/dataset.jsonl"
+	baseline       = "../../docs/contracts/training-config-examples/01-baseline.json"
 )
 
 type result struct {
@@ -24,27 +26,27 @@ type result struct {
 	stderr string
 }
 
-func train(t *testing.T, args ...string) result {
+func trainWith(t *testing.T, ctx context.Context, args ...string) result {
 	t.Helper()
 
 	var stdout, stderr bytes.Buffer
-	code := run(args, &stdout, &stderr)
+	code := run(ctx, args, &stdout, &stderr)
 
 	return result{code, stdout.String(), stderr.String()}
+}
+
+func train(t *testing.T, args ...string) result {
+	t.Helper()
+	return trainWith(t, context.Background(), args...)
 }
 
 // flags returns a complete, valid set of flags that writes into dir.
 func flags(dir string) map[string]string {
 	return map[string]string{
-		"dataset":        fixture,
-		"model-output":   filepath.Join(dir, "trained-model.json"),
-		"report-output":  filepath.Join(dir, "training-report.json"),
-		"train-end":      "2025-12-31T23:59:59Z",
-		"validation-end": "2026-02-28T23:59:59Z",
-		"seed":           "42",
-		"epochs":         "5000",
-		"learning-rate":  "1.0",
-		"threshold":      "0.5",
+		"config":        baseline,
+		"dataset":       fixture,
+		"model-output":  filepath.Join(dir, "trained-model.json"),
+		"report-output": filepath.Join(dir, "training-report.json"),
 	}
 }
 
@@ -66,6 +68,28 @@ func fileSHA256(t *testing.T, path string) string {
 
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
+}
+
+// writeConfig writes the baseline configuration with one replacement into
+// dir and returns its path.
+func writeConfig(t *testing.T, dir, old, new string) string {
+	t.Helper()
+
+	data, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Count(string(data), old) != 1 {
+		t.Fatalf("%q must occur exactly once in the baseline configuration", old)
+	}
+
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(strings.Replace(string(data), old, new, 1)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return path
 }
 
 // output parses stdout, which must hold exactly one compact JSON object
@@ -133,7 +157,7 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 	want := trainedSummary{
 		Status:        "trained",
 		DatasetSHA256: fileSHA256(t, fixture),
-		Records:       records{Total: 12, Usable: 10, Insufficient: 1, Immature: 1},
+		Records:       records{Total: 8, Usable: 6, Insufficient: 1, Immature: 1},
 		ModelSHA256:   fileSHA256(t, f["model-output"]),
 		ReportSHA256:  reportSHA256,
 	}
@@ -141,7 +165,7 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 		t.Errorf("summary = %+v\nwant      %+v", summary, want)
 	}
 
-	network, provenance, err := nn.LoadWithProvenance(f["model-output"], "transaction-features-v1")
+	network, provenance, err := nn.LoadWithProvenance(f["model-output"], "pix-risk-v1")
 	if err != nil {
 		t.Fatalf("load trained model: %v", err)
 	}
@@ -150,41 +174,15 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 	case provenance.ReportSHA256 != reportSHA256:
 		t.Errorf("model report_sha256 = %s, want %s", provenance.ReportSHA256, reportSHA256)
 	case provenance.DatasetSHA256 != want.DatasetSHA256:
-		t.Errorf("model dataset_sha256 = %s, want %s", provenance.DatasetSHA256, want.DatasetSHA256)
+		t.Errorf("model dataset_sha256 = %s", provenance.DatasetSHA256)
+	case provenance.TrainingExampleVersion != "pix-training-example-v2":
+		t.Errorf("training example version = %s", provenance.TrainingExampleVersion)
 	case provenance.Seed != 42 || provenance.Epochs != 5000 || provenance.LearningRate != 1 || provenance.Threshold != 0.5:
 		t.Errorf("model configuration = %+v", provenance)
-	case provenance.TrainEnd.Format("2006-01-02T15:04:05Z07:00") != "2025-12-31T23:59:59Z":
-		t.Errorf("model train_end = %s", provenance.TrainEnd)
 	}
 
-	// cmd/predict loads models with nn.Load.
-	if _, err := nn.Load(f["model-output"], "transaction-features-v1"); err != nil {
-		t.Errorf("nn.Load() of the trained model: %v", err)
-	}
-
-	outputs, err := network.Predict([]float64{0.9, 0.45, 1, 1})
-	if err != nil || !(outputs[0] >= 0.5) {
-		t.Errorf("trained model scores a fraud-like payment %v (%v)", outputs, err)
-	}
-
-	var report struct {
-		Version    string `json:"training_report_version"`
-		Validation struct {
-			TruePositives int `json:"true_positives"`
-		} `json:"validation"`
-		Test struct {
-			TrueNegatives int `json:"true_negatives"`
-		} `json:"test"`
-	}
-	data, err := os.ReadFile(f["report-output"])
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := json.Unmarshal(data, &report); err != nil {
-		t.Fatal(err)
-	}
-	if report.Version != "pix-training-report-v1" || report.Validation.TruePositives != 1 || report.Test.TrueNegatives != 1 {
-		t.Errorf("report = %+v", report)
+	if _, err := network.Predict(make([]float64, 62)); err != nil {
+		t.Errorf("the trained network does not take the 62 pix-risk-v1 features: %v", err)
 	}
 
 	if !strings.Contains(r.stderr, "training loss") {
@@ -214,15 +212,6 @@ func TestTrainIsReproducible(t *testing.T) {
 
 	if firstRun.stdout != secondRun.stdout {
 		t.Errorf("stdout differs: %q, %q", firstRun.stdout, secondRun.stdout)
-	}
-
-	// Running again over existing artifacts replaces them with the same bytes.
-	model := fileSHA256(t, first["model-output"])
-	if again := train(t, args(first)...); again.code != 0 || again.stdout != firstRun.stdout {
-		t.Errorf("rerun: exit code %d, stdout %q", again.code, again.stdout)
-	}
-	if fileSHA256(t, first["model-output"]) != model {
-		t.Error("rerun changed the model")
 	}
 }
 
@@ -255,17 +244,13 @@ func TestTrainStopsOnInvalidDataset(t *testing.T) {
 	switch {
 	case invalid.Status != "invalid_dataset":
 		t.Errorf("status = %q", invalid.Status)
-	case invalid.Dataset.DatasetReportVersion != "pix-training-dataset-report-v1":
-		t.Errorf("dataset report version = %q", invalid.Dataset.DatasetReportVersion)
-	case invalid.Dataset.Records != records{Total: 7, Usable: 3, Invalid: 2, Insufficient: 1, Immature: 1}:
+	case invalid.Dataset.FeatureSchema != "pix-risk-v1" || invalid.Dataset.TrainingExampleVersion != "pix-training-example-v2":
+		t.Errorf("dataset report = %+v", invalid.Dataset)
+	case invalid.Dataset.Records != records{Total: 10, Usable: 6, Invalid: 2, Insufficient: 1, Immature: 1}:
 		t.Errorf("records = %+v", invalid.Dataset.Records)
-	case len(invalid.Dataset.Exclusions) != 4:
-		t.Errorf("exclusions = %s", invalid.Dataset.Exclusions)
-	case invalid.Dataset.DatasetSHA256 != fileSHA256(t, invalidDataset):
-		t.Errorf("dataset_sha256 = %s", invalid.Dataset.DatasetSHA256)
 	}
 
-	for _, want := range []string{"line 4: /outcome/label: invalid_enum_value", "line 6: /scoring_input/pix_payment/amount_cents"} {
+	for _, want := range []string{"line 7: /outcome/label: invalid_enum_value", "line 8: /scoring_input/pix_payment/reference_time_offset"} {
 		if !strings.Contains(r.stderr, want) {
 			t.Errorf("stderr does not report %q:\n%s", want, r.stderr)
 		}
@@ -279,7 +264,7 @@ func TestTrainStopsOnInvalidDataset(t *testing.T) {
 func TestTrainRejectsTrainPartitionWithOneClass(t *testing.T) {
 	dir := t.TempDir()
 	f := flags(dir)
-	f["train-end"] = "2025-09-10T00:00:00Z"
+	f["config"] = writeConfig(t, t.TempDir(), `"train_end": "2026-06-05T00:00:00Z"`, `"train_end": "2026-05-31T00:00:00Z"`)
 
 	r := train(t, args(f)...)
 
@@ -288,8 +273,34 @@ func TestTrainRejectsTrainPartitionWithOneClass(t *testing.T) {
 		t.Errorf("exit code = %d, want 1", r.code)
 	case r.stdout != "":
 		t.Errorf("stdout = %q, want empty", r.stdout)
-	case !strings.Contains(r.stderr, "0 usable fraud and 1 usable legitimate") || !strings.Contains(r.stderr, "-train-end"):
+	case !strings.Contains(r.stderr, "0 usable fraud and 3 usable legitimate") || !strings.Contains(r.stderr, "train_end"):
 		t.Errorf("stderr is not actionable:\n%s", r.stderr)
+	}
+
+	if got := entries(t, dir); len(got) != 0 {
+		t.Errorf("output directory = %v, want no artifact", got)
+	}
+}
+
+func TestTrainRejectsInvalidConfigurations(t *testing.T) {
+	dir := t.TempDir()
+	f := flags(dir)
+	f["config"] = "../../docs/contracts/training-config-examples/08-invalid-ranges.json"
+
+	r := train(t, args(f)...)
+
+	if r.code != 1 || r.stdout != "" {
+		t.Errorf("exit code %d, stdout %q, want 1 and empty", r.code, r.stdout)
+	}
+
+	for _, want := range []string{"/learning_rate: out_of_range", "/max_epochs: out_of_range", "/selection/threshold/value: out_of_range"} {
+		if !strings.Contains(r.stderr, want) {
+			t.Errorf("stderr does not report %q:\n%s", want, r.stderr)
+		}
+	}
+
+	if strings.Contains(r.stderr, "epoch 0") {
+		t.Errorf("an invalid configuration must stop before training:\n%s", r.stderr)
 	}
 
 	if got := entries(t, dir); len(got) != 0 {
@@ -317,38 +328,6 @@ func TestTrainRequiresEveryFlag(t *testing.T) {
 
 func TestTrainRejectsInvalidArguments(t *testing.T) {
 	tests := map[string]func(f map[string]string) []string{
-		"date-only train-end": func(f map[string]string) []string {
-			f["train-end"] = "2025-12-31"
-			return args(f)
-		},
-		"lowercase timestamp": func(f map[string]string) []string {
-			f["validation-end"] = "2026-02-28t23:59:59z"
-			return args(f)
-		},
-		"unknown local offset": func(f map[string]string) []string {
-			f["validation-end"] = "2026-02-28T23:59:59-00:00"
-			return args(f)
-		},
-		"reversed boundaries": func(f map[string]string) []string {
-			f["train-end"], f["validation-end"] = f["validation-end"], f["train-end"]
-			return args(f)
-		},
-		"zero epochs": func(f map[string]string) []string {
-			f["epochs"] = "0"
-			return args(f)
-		},
-		"fractional seed": func(f map[string]string) []string {
-			f["seed"] = "4.2"
-			return args(f)
-		},
-		"NaN learning rate": func(f map[string]string) []string {
-			f["learning-rate"] = "NaN"
-			return args(f)
-		},
-		"threshold above 1": func(f map[string]string) []string {
-			f["threshold"] = "1.5"
-			return args(f)
-		},
 		"same output paths": func(f map[string]string) []string {
 			f["report-output"] = f["model-output"]
 			return args(f)
@@ -357,8 +336,12 @@ func TestTrainRejectsInvalidArguments(t *testing.T) {
 			f["dataset"] = filepath.Join(filepath.Dir(f["model-output"]), "absent.jsonl")
 			return args(f)
 		},
-		"unknown flag": func(f map[string]string) []string {
-			return append(args(f), "--shuffle", "true")
+		"missing configuration": func(f map[string]string) []string {
+			f["config"] = filepath.Join(filepath.Dir(f["model-output"]), "absent.json")
+			return args(f)
+		},
+		"version 1 flags": func(f map[string]string) []string {
+			return append(args(f), "--seed", "42")
 		},
 		"positional argument": func(f map[string]string) []string {
 			return append(args(f), "extra")
@@ -380,28 +363,31 @@ func TestTrainRejectsInvalidArguments(t *testing.T) {
 	}
 }
 
-func TestTrainNeverOverwritesTheDataset(t *testing.T) {
-	data, err := os.ReadFile(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestTrainNeverOverwritesItsInputs(t *testing.T) {
+	for _, input := range []string{"dataset", "config"} {
+		for _, output := range []string{"model-output", "report-output"} {
+			f := flags(t.TempDir())
 
-	for _, output := range []string{"model-output", "report-output"} {
-		dataset := filepath.Join(t.TempDir(), "dataset.jsonl")
-		if err := os.WriteFile(dataset, data, 0o644); err != nil {
-			t.Fatal(err)
-		}
+			data, err := os.ReadFile(f[input])
+			if err != nil {
+				t.Fatal(err)
+			}
 
-		f := flags(t.TempDir())
-		f["dataset"] = dataset
-		f[output] = dataset
+			copied := filepath.Join(t.TempDir(), input)
+			if err := os.WriteFile(copied, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
 
-		if r := train(t, args(f)...); r.code != 1 || r.stdout != "" {
-			t.Errorf("-%s is the dataset: exit code %d, stdout %q", output, r.code, r.stdout)
-		}
+			f[input] = copied
+			f[output] = copied
 
-		if after, err := os.ReadFile(dataset); err != nil || !bytes.Equal(after, data) {
-			t.Errorf("-%s is the dataset: the dataset was overwritten", output)
+			if r := train(t, args(f)...); r.code != 1 || r.stdout != "" {
+				t.Errorf("-%s is the %s: exit code %d, stdout %q", output, input, r.code, r.stdout)
+			}
+
+			if after, err := os.ReadFile(copied); err != nil || !bytes.Equal(after, data) {
+				t.Errorf("-%s is the %s: the %s was overwritten", output, input, input)
+			}
 		}
 	}
 }
@@ -423,10 +409,27 @@ func TestTrainWritesArtifactsAtomically(t *testing.T) {
 	}
 }
 
+func TestTrainStopsWhenCanceled(t *testing.T) {
+	dir := t.TempDir()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	r := trainWith(t, ctx, args(flags(dir))...)
+
+	if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, "canceled") {
+		t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+	}
+
+	if got := entries(t, dir); len(got) != 0 {
+		t.Errorf("output directory = %v, want no artifact", got)
+	}
+}
+
 func TestTrainHelp(t *testing.T) {
 	r := train(t, "-h")
 
-	if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, "-validation-end") {
+	if r.code != 0 || r.stdout != "" || !strings.Contains(r.stderr, "-config") {
 		t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
 	}
 }

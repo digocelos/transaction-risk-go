@@ -2,6 +2,7 @@ package training
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -29,7 +30,7 @@ var pixRiskBoundaries = evaluation.Boundaries{
 func prepareDataset(t *testing.T, data []byte) PreparedDataset {
 	t.Helper()
 
-	dataset, err := PrepareDataset(bytes.NewReader(data), pixRiskBoundaries)
+	dataset, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries)
 	if err != nil {
 		t.Fatalf("PrepareDataset() error = %v", err)
 	}
@@ -136,7 +137,7 @@ func TestPrepareDatasetMatchesScoringPreparation(t *testing.T) {
 }
 
 func TestPrepareDatasetStopsOnInvalidRecords(t *testing.T) {
-	_, err := PrepareDataset(bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")), pixRiskBoundaries)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")), pixRiskBoundaries)
 
 	var invalid *InvalidDatasetError
 	if !errors.As(err, &invalid) {
@@ -151,11 +152,17 @@ func TestPrepareDatasetStopsOnInvalidRecords(t *testing.T) {
 func TestPrepareDatasetStopsWhenAFeatureIsNeverKnownInTrain(t *testing.T) {
 	examples := "../docs/contracts/training-examples-v2/"
 
-	// The only train record has no payer device and no period limit.
-	data := append(read(t, examples+"06-legitimate-no-device-no-period-limit.jsonl"),
+	// Both train records have no payer device and no period limit.
+	legitimate := read(t, examples+"06-legitimate-no-device-no-period-limit.jsonl")
+	fraud := strings.NewReplacer(
+		"2026-05-25", "2026-05-26",
+		`"label":"legitimate"`, `"label":"fraud"`,
+	).Replace(string(legitimate))
+
+	data := append(append(legitimate, fraud...),
 		read(t, examples+"03-fraud-registered-device-pre-registered-recipient.jsonl")...)
 
-	_, err := PrepareDataset(bytes.NewReader(data), pixRiskBoundaries)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries)
 
 	var never *pixrisk.FeatureNeverKnownError
 	if !errors.As(err, &never) {
@@ -170,17 +177,18 @@ func TestPrepareDatasetStopsWhenAFeatureIsNeverKnownInTrain(t *testing.T) {
 func TestPrepareDatasetValidatesBoundariesBeforeReading(t *testing.T) {
 	reversed := evaluation.Boundaries{TrainEnd: pixRiskBoundaries.ValidationEnd, ValidationEnd: pixRiskBoundaries.TrainEnd}
 
-	if _, err := PrepareDataset(failingReader{t}, reversed); err == nil {
+	if _, err := PrepareDataset(context.Background(), failingReader{t}, reversed); err == nil {
 		t.Error("PrepareDataset() error = nil, want an error")
 	}
 }
 
 // Records of another training example version are invalid.
 func TestPrepareDatasetRejectsVersion1Records(t *testing.T) {
-	_, err := PrepareDataset(bytes.NewReader(read(t, fixture)), pixRiskBoundaries)
+	v1 := read(t, "../docs/contracts/training-examples/dataset.jsonl")
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(v1), pixRiskBoundaries)
 
 	var invalid *InvalidDatasetError
-	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 12 {
+	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 7 {
 		t.Errorf("PrepareDataset() error = %v, want every record invalid", err)
 	}
 }
