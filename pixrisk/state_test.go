@@ -256,3 +256,21 @@ func TestStateValidation(t *testing.T) {
 		}
 	}
 }
+
+// A standardized value that overflows binary64 is an error, never an
+// infinite input to the network.
+func TestApplyRejectsStandardizedValuesThatOverflow(t *testing.T) {
+	state, err := Fit([]Prepared{vector(t, everyFeature(1)), vector(t, everyFeature(3))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state.Features[index(t, "amount")].Scale = math.SmallestNonzeroFloat64
+	if err := state.Validate(); err != nil {
+		t.Fatalf("a tiny positive scale is a valid state: %v", err)
+	}
+
+	_, err = state.Apply(vector(t, everyFeature(1e10)))
+	if err == nil || !strings.Contains(err.Error(), "amount is not finite") {
+		t.Errorf("Apply() error = %v, want amount is not finite", err)
+	}
+}
