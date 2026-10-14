@@ -1,6 +1,7 @@
 package training
 
 import (
+	"context"
 	"fmt"
 	"io"
 
@@ -33,14 +34,19 @@ type PreparedDataset struct {
 	Test       []PreparedExample
 }
 
+// cancellationInterval is the number of records read between two checks of
+// the context.
+const cancellationInterval = 1024
+
 // PrepareDataset reads and classifies every record of a dataset with
 // pix-risk-v1, partitions it by decision time, fits the preparation state
 // on the usable train records only, and applies that frozen state to every
-// partition. The boundaries are validated before the dataset is read. A
-// dataset with invalid records yields an *InvalidDatasetError, and a
-// standardized feature that no usable train record has yields a
-// *pixrisk.FeatureNeverKnownError.
-func PrepareDataset(dataset io.Reader, boundaries evaluation.Boundaries) (PreparedDataset, error) {
+// partition. The boundaries are validated before the dataset is read, and
+// ctx is checked every 1,024 records. A dataset with invalid records yields
+// an *InvalidDatasetError, a train partition without both labels an
+// *UntrainableError, and a standardized feature that no usable train
+// record has a *pixrisk.FeatureNeverKnownError.
+func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluation.Boundaries) (PreparedDataset, error) {
 	partitioner, err := evaluation.NewPartitioner(boundaries)
 	if err != nil {
 		return PreparedDataset{}, err
@@ -51,6 +57,12 @@ func PrepareDataset(dataset io.Reader, boundaries evaluation.Boundaries) (Prepar
 	var diagnostics []trainingdata.Diagnostic
 
 	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, func(record trainingdata.Record) error {
+		if record.Line%cancellationInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
+
 		if exclusion, ok := record.Exclusion(); ok {
 			exclusions = append(exclusions, exclusion)
 		}
@@ -84,6 +96,11 @@ func PrepareDataset(dataset io.Reader, boundaries evaluation.Boundaries) (Prepar
 		return PreparedDataset{}, &InvalidDatasetError{Report: report, Diagnostics: diagnostics}
 	}
 
+	partitionReport := partitioner.Report()
+	if partitionReport.Train.Fraud == 0 || partitionReport.Train.Legitimate == 0 {
+		return PreparedDataset{}, &UntrainableError{Train: partitionReport.Train}
+	}
+
 	train := make([]pixrisk.Prepared, len(partitions[evaluation.Train]))
 	for i, example := range partitions[evaluation.Train] {
 		train[i] = example.Prepared
@@ -107,7 +124,7 @@ func PrepareDataset(dataset io.Reader, boundaries evaluation.Boundaries) (Prepar
 
 	return PreparedDataset{
 		Dataset:    report,
-		Partitions: partitioner.Report(),
+		Partitions: partitionReport,
 		State:      state,
 		Train:      partitions[evaluation.Train],
 		Validation: partitions[evaluation.Validation],

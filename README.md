@@ -111,64 +111,82 @@ retrain. `predict` rejects a model trained with a different schema.
 
 ## Training from a dataset (`cmd/train`)
 
-`train` trains the same 4-4-1 network from a dataset that follows the
-[`pix-training-example-v1` training contract](docs/contracts/pix-training-example-v1.md):
-one JSON Lines record per past Pix payment, embedding its scoring input
-and the outcome observed later. It evaluates the model with the contract's
-temporal evaluation protocol and writes the model and its training report.
+`train` trains a network from a dataset that follows the
+[`pix-training-example-v2` training contract](docs/contracts/pix-training-example-v2.md):
+one JSON Lines record per past Pix payment, embedding its
+[`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input
+and the outcome observed later. The records are prepared with the feature
+schema [`pix-risk-v1`](docs/features/pix-risk-v1.md), and a
+[`pix-training-config-v1`](docs/contracts/pix-training-config-v1.md)
+configuration fixes everything else about the run.
 
 ```bash
 go run ./cmd/train \
-  -dataset training/testdata/dataset.jsonl \
+  -config docs/contracts/training-config-examples/01-baseline.json \
+  -dataset training/testdata/pix-risk-v1.jsonl \
   -model-output trained-model.json \
-  -report-output training-report.json \
-  -train-end 2025-12-31T23:59:59Z \
-  -validation-end 2026-02-28T23:59:59Z \
-  -seed 42 \
-  -epochs 5000 \
-  -learning-rate 1.0 \
-  -threshold 0.5
+  -report-output training-report.json
 ```
 
-Every flag is required; nothing has a default. The two boundaries are
-RFC 3339 timestamps with an offset. `training/testdata/dataset.jsonl` holds
-12 small synthetic records for trying the command.
+Every flag is required. `training/testdata/pix-risk-v1.jsonl` holds 8 small
+synthetic records for trying the command, and
+[`docs/contracts/training-config-examples/`](docs/contracts/training-config-examples/)
+holds configurations to start from:
+
+```json
+{
+  "config_version": "pix-training-config-v1",
+  "feature_schema": "pix-risk-v1",
+  "architecture": {"hidden_layers": [4], "activation": "sigmoid"},
+  "algorithm": "full-batch-gradient-descent",
+  "loss": "mean-squared-error",
+  "seed": 42,
+  "learning_rate": 1.0,
+  "max_epochs": 5000,
+  "boundaries": {"train_end": "2026-06-05T00:00:00Z", "validation_end": "2026-06-12T00:00:00Z"},
+  "selection": {"checkpoint": "final_epoch", "threshold": {"policy": "fixed", "value": 0.5}}
+}
+```
 
 `train`:
 
-1. Reads, validates, and classifies every record, and fingerprints the
+1. Validates the configuration before reading anything else. An invalid
+   configuration is reported issue by issue, with a JSON Pointer and a
+   code, and nothing is read or written.
+2. Reads, validates, and classifies every record, and fingerprints the
    dataset bytes with SHA-256. If any record is invalid, it reports every
    invalid record and stops without training. Insufficient and immature
    records are excluded and counted.
-2. Splits the other records by decision time only: train up to
-   `-train-end`, validation up to `-validation-end`, and test after it.
-3. Trains on the usable train records only, with full-batch gradient
-   descent from the initial weights given by `-seed`. The train partition
-   needs at least one usable `fraud` record and one usable `legitimate`
-   record.
-4. Scores the validation and test partitions once each and measures them
-   at `-threshold`: a score at or above it predicts fraud.
-5. Writes the training report (`pix-training-report-v1`): the
+3. Splits the other records by decision time only, using the configured
+   boundaries, and fits the feature standardization on the usable train
+   records only.
+4. Trains the configured network on the usable train records only, with
+   full-batch gradient descent for `max_epochs` epochs. The train
+   partition needs at least one usable `fraud` record and one usable
+   `legitimate` record. A step that would make a parameter non-finite
+   stops training, and nothing is written.
+5. Scores the validation and test partitions once each and measures them
+   at the configured threshold: a score at or above it predicts fraud.
+6. Writes the training report (`pix-training-report-v1`): the
    configuration, the dataset report with every exclusion, the partition
    counts, the group overlap, and the validation and test metrics.
-6. Writes the model in model format version 2: the network plus its
+7. Writes the model in model format version 2: the network plus its
    provenance, which records the dataset fingerprint, the configuration,
    and the SHA-256 of the report. See
    [ADR 0010](docs/adr/0010-trained-models-carry-compact-provenance.md).
 
 Each file is written to a temporary file first and then renamed, so a
-failure never leaves a partial artifact. Progress, including the training
-loss, goes to standard error. Standard output holds exactly one JSON object,
-followed by a newline:
+failure never leaves a partial artifact. An interrupt (SIGINT or SIGTERM)
+cancels the run within one epoch, or within 1,024 records while reading,
+and nothing is written. Progress, including the training loss, goes to
+standard error. Standard output holds exactly one JSON object, followed by
+a newline:
 
 | Exit code | `status` | Meaning |
 |-----------|----------|---------|
 | 0 | `trained` | The model and the report were written. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, and `report_sha256`. |
 | 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, whose `exclusions` list each problem by `line`, `path`, and `code`. Standard error repeats each problem with a message. Nothing is written. |
-| 1 | none | Operational failure, such as a missing flag, an unreadable dataset, a train partition without both labels, or a failed write. Standard output is empty, and the message goes to standard error. |
-
-To score payments with a trained model, use it as the `model.json` of the
-directory where you run `predict`.
+| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an unreadable dataset, a train partition without both labels, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
 
 ### Limitations
 
@@ -180,16 +198,18 @@ a large, representative dataset of mature labels, and review its
 precision, recall, false positives, and missed losses against your own risk
 policy.
 
-- The model is the 4-4-1 baseline with the four features of
-  `transaction-features-v1`. Training uses the natural class distribution,
-  with no resampling or reweighting.
-- The threshold is the one you supply. The command does not choose it from
-  validation results.
+- Models trained by `train` cannot score payments yet: the feature
+  standardization they need is not stored until the model artifact format
+  of #29, and `predict` reads `pix-risk-v1` inputs only from #31.
+- Training uses the natural class distribution, with no resampling or
+  reweighting, and keeps the last epoch's network. The threshold is the one
+  you configure.
 - All usable records are kept in memory, because every epoch uses the whole
   train partition.
-- The same dataset bytes and flags produce the same model and report on the
-  same platform. Floating-point results can differ in their last bits
-  between CPU architectures, such as arm64 and amd64.
+- The same dataset bytes and configuration produce the same model and
+  report on the same platform. Across CPU architectures, such as arm64 and
+  amd64, scores can differ in their last bits; the toolkit tests that they
+  agree within 10^−9.
 
 ## Version 2 contracts and `pix-risk-v1`
 
@@ -201,5 +221,5 @@ replace the version 1 contracts, and the feature schema
 Pix key, payer device, or limit per period, marking unavailable information
 with explicit indicators instead of refusing to score. The `pixrisk`
 package prepares its 62 features and fits their standardization on the
-train partition only. `cmd/train` and `cmd/predict` still use version 1
-until they migrate.
+train partition only. `cmd/train` uses version 2; `cmd/predict` still uses
+version 1 until it migrates.

@@ -23,13 +23,15 @@ const (
 	KindObject
 )
 
-// Value is a parsed JSON value. Numbers keep their raw token, and Start
-// and End delimit the value's exact bytes in the parsed document.
+// Value is a parsed JSON value. Numbers keep their raw token, Items holds
+// the elements of an array in order, and Start and End delimit the value's
+// exact bytes in the parsed document.
 type Value struct {
 	Kind    Kind
 	Text    string
 	Members map[string]*Value
 	Names   []string
+	Items   []*Value
 	Start   int
 	End     int
 }
@@ -185,19 +187,23 @@ func (p *jsonParser) object() (*Value, error) {
 func (p *jsonParser) array() (*Value, error) {
 	p.pos++
 
+	array := &Value{Kind: KindArray}
+
 	p.skipSpace()
 	if p.consume(']') {
-		return &Value{Kind: KindArray}, nil
+		return array, nil
 	}
 
 	for index := 0; ; index++ {
-		if _, err := p.child(strconv.Itoa(index)); err != nil {
+		item, err := p.child(strconv.Itoa(index))
+		if err != nil {
 			return nil, err
 		}
+		array.Items = append(array.Items, item)
 
 		p.skipSpace()
 		if p.consume(']') {
-			return &Value{Kind: KindArray}, nil
+			return array, nil
 		}
 
 		if !p.consume(',') {

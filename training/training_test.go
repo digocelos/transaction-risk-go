@@ -2,7 +2,10 @@ package training
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"reflect"
 	"strings"
@@ -10,27 +13,27 @@ import (
 	"time"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
-	"github.com/digocelos/transaction-risk-go/nn"
+	"github.com/digocelos/transaction-risk-go/pixrisk"
+	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
-// The fixture holds 12 synthetic records: 3 legitimate and 3 fraud records
-// from September to December 2025, 1 of each in January and February 2026,
-// 1 of each in March and April 2026, then 1 insufficient record (May 2026)
-// and 1 immature record (August 2026).
-const fixture = "testdata/dataset.jsonl"
-
-func config() Config {
-	return Config{
-		Boundaries: evaluation.Boundaries{
-			TrainEnd:      time.Date(2025, 12, 31, 23, 59, 59, 0, time.UTC),
-			ValidationEnd: time.Date(2026, 2, 28, 23, 59, 59, 0, time.UTC),
-		},
-		Seed:         42,
-		Epochs:       5000,
-		LearningRate: 1,
-		Threshold:    0.5,
+// config returns the baseline configuration for pixRiskFixture.
+func config() trainingconfig.Config {
+	return trainingconfig.Config{
+		FeatureSchema: pixrisk.Schema,
+		HiddenLayers:  []int{4},
+		Activation:    trainingconfig.ActivationSigmoid,
+		Algorithm:     trainingconfig.AlgorithmFullBatchGradient,
+		Loss:          trainingconfig.LossMeanSquaredError,
+		Seed:          42,
+		LearningRate:  1,
+		MaxEpochs:     2000,
+		TrainEnd:      pixRiskBoundaries.TrainEnd,
+		ValidationEnd: pixRiskBoundaries.ValidationEnd,
+		Checkpoint:    trainingconfig.CheckpointFinalEpoch,
+		Threshold:     trainingconfig.Threshold{Policy: trainingconfig.ThresholdFixed, Value: 0.5},
 	}
 }
 
@@ -45,10 +48,10 @@ func read(t *testing.T, path string) []byte {
 	return data
 }
 
-func run(t *testing.T, dataset []byte, config Config) Result {
+func run(t *testing.T, dataset []byte, config trainingconfig.Config) Result {
 	t.Helper()
 
-	result, err := Run(bytes.NewReader(dataset), config, nil)
+	result, err := Run(context.Background(), bytes.NewReader(dataset), config, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -56,20 +59,22 @@ func run(t *testing.T, dataset []byte, config Config) Result {
 	return result
 }
 
-// probes are feature vectors that expose the network parameters.
-var probes = [][]float64{
-	{0.1, 0.1, 1, 0},
-	{0.9, 0.45, 1, 1},
-	{0.5, 0.25, 0, 1},
-	{0, 0, 0, 0},
-}
-
-func scores(t *testing.T, network *nn.Network) []float64 {
+// scores exposes a trained model through its scores of the fixture's
+// usable records, which together use every feature.
+func scores(t *testing.T, result Result) []float64 {
 	t.Helper()
 
+	dataset := prepareDataset(t, read(t, pixRiskFixture))
+	examples := append(append(append([]PreparedExample{}, dataset.Train...), dataset.Validation...), dataset.Test...)
+
 	var scores []float64
-	for _, inputs := range probes {
-		outputs, err := network.Predict(inputs)
+	for _, example := range examples {
+		values, err := result.State.Apply(example.Prepared)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		outputs, err := result.Network.Predict(values)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -79,7 +84,7 @@ func scores(t *testing.T, network *nn.Network) []float64 {
 	return scores
 }
 
-// replaceLine replaces one substring of one line of the fixture.
+// replaceLine replaces one substring of one line of a dataset.
 func replaceLine(t *testing.T, dataset []byte, line int, old, new string) []byte {
 	t.Helper()
 
@@ -92,145 +97,159 @@ func replaceLine(t *testing.T, dataset []byte, line int, old, new string) []byte
 	return []byte(strings.Join(lines, ""))
 }
 
-func TestRunReportsEveryRecordAndPartition(t *testing.T) {
-	report := run(t, read(t, fixture), config()).Report
+func TestRunReportsTheDatasetAndPartitions(t *testing.T) {
+	report := run(t, read(t, pixRiskFixture), config()).Report
 
-	wantRecords := trainingdata.Counts{Total: 12, Usable: 10, Insufficient: 1, Immature: 1}
-	if report.Dataset.Records != wantRecords {
-		t.Errorf("records = %+v, want %+v", report.Dataset.Records, wantRecords)
-	}
-
-	if len(report.Dataset.Exclusions) != 2 {
-		t.Errorf("exclusions = %+v, want the insufficient and immature records", report.Dataset.Exclusions)
+	wantRecords := trainingdata.Counts{Total: 8, Usable: 6, Insufficient: 1, Immature: 1}
+	if report.Dataset.Records != wantRecords || report.Dataset.FeatureSchema != pixrisk.Schema {
+		t.Errorf("dataset = %+v", report.Dataset)
 	}
 
 	partitions := report.Partitions
 	want := map[string][2]evaluation.PartitionCounts{
-		"train":      {partitions.Train, {Fraud: 3, Legitimate: 3}},
-		"validation": {partitions.Validation, {Fraud: 1, Legitimate: 1}},
-		"test":       {partitions.Test, {Fraud: 1, Legitimate: 1, Insufficient: 1, Immature: 1}},
+		"train":      {partitions.Train, {Fraud: 1, Legitimate: 3, Insufficient: 1}},
+		"validation": {partitions.Validation, {Fraud: 1}},
+		"test":       {partitions.Test, {Fraud: 1, Immature: 1}},
 	}
 	for name, counts := range want {
 		if counts[0] != counts[1] {
 			t.Errorf("%s = %+v, want %+v", name, counts[0], counts[1])
 		}
 	}
-
-	// g-a1 is in train and validation, g-a2 in train and test.
-	wantOverlap := evaluation.GroupOverlap{SharedKeys: 2, RecordsSharingTrainKeys: 2}
-	if partitions.GroupOverlap != wantOverlap {
-		t.Errorf("group overlap = %+v, want %+v", partitions.GroupOverlap, wantOverlap)
-	}
-
-	if !partitions.TrainEnd.Equal(config().Boundaries.TrainEnd) ||
-		!partitions.ValidationEnd.Equal(config().Boundaries.ValidationEnd) {
-		t.Errorf("boundaries = %s, %s", partitions.TrainEnd, partitions.ValidationEnd)
-	}
 }
 
 func TestRunRecordsTheConfiguration(t *testing.T) {
-	report := run(t, read(t, fixture), config()).Report
+	result := run(t, read(t, pixRiskFixture), config())
 
 	want := trainingreport.Configuration{
 		Algorithm:     "full-batch-gradient-descent",
-		FeatureSchema: "transaction-features-v1",
+		FeatureSchema: "pix-risk-v1",
 		Seed:          42,
-		Epochs:        5000,
+		Epochs:        2000,
 		LearningRate:  1,
 		Threshold:     0.5,
 	}
+	if result.Report.Configuration != want {
+		t.Errorf("configuration = %+v, want %+v", result.Report.Configuration, want)
+	}
 
-	if report.Configuration != want {
-		t.Errorf("configuration = %+v, want %+v", report.Configuration, want)
+	if result.State.Schema != pixrisk.Schema || len(result.State.Features) != pixrisk.FeatureCount {
+		t.Errorf("state = %s with %d features", result.State.Schema, len(result.State.Features))
+	}
+
+	if _, err := trainingreport.Marshal(result.Report); err != nil {
+		t.Errorf("the report does not marshal: %v", err)
 	}
 }
 
 func TestRunEvaluatesValidationAndTestAtTheThreshold(t *testing.T) {
-	report := run(t, read(t, fixture), config()).Report
-
-	for name, metrics := range map[string]evaluation.Metrics{"validation": report.Validation, "test": report.Test} {
-		if metrics.Threshold != 0.5 {
-			t.Errorf("%s threshold = %v, want 0.5", name, metrics.Threshold)
-		}
-
-		// One fraud and one legitimate record, both easy to separate.
-		if metrics.TruePositives != 1 || metrics.TrueNegatives != 1 ||
-			metrics.FalsePositives != 0 || metrics.FalseNegatives != 0 {
-			t.Errorf("%s confusion matrix = %d TP, %d FP, %d TN, %d FN", name,
-				metrics.TruePositives, metrics.FalsePositives, metrics.TrueNegatives, metrics.FalseNegatives)
-		}
-	}
-
-	if report.Validation.FraudAmountCentsDetected != 200000 || report.Validation.KnownLossCentsDetected != 200000 {
-		t.Errorf("validation amounts = %+v", report.Validation)
-	}
-
-	if report.Test.FraudAmountCentsDetected != 170000 || report.Test.UnknownLossFraudsDetected != 1 {
-		t.Errorf("test amounts = %+v", report.Test)
-	}
-
 	cfg := config()
-	cfg.Threshold = 0.3
-	report = run(t, read(t, fixture), cfg).Report
+	cfg.Threshold.Value = 0.3
+	report := run(t, read(t, pixRiskFixture), cfg).Report
 
 	if report.Validation.Threshold != 0.3 || report.Test.Threshold != 0.3 {
-		t.Errorf("thresholds = %v and %v, want the configured 0.3", report.Validation.Threshold, report.Test.Threshold)
+		t.Errorf("thresholds = %v and %v, want 0.3", report.Validation.Threshold, report.Test.Threshold)
+	}
+
+	// One fraud in each partition, detected or missed.
+	for name, metrics := range map[string]evaluation.Metrics{"validation": report.Validation, "test": report.Test} {
+		if metrics.TruePositives+metrics.FalseNegatives != 1 || metrics.FalsePositives+metrics.TrueNegatives != 0 {
+			t.Errorf("%s confusion matrix = %+v", name, metrics)
+		}
+	}
+
+	if report.Test.UnknownLossFraudsDetected+report.Test.UnknownLossFraudsMissed != 1 {
+		t.Errorf("test unknown losses = %+v", report.Test)
 	}
 }
 
-// Labels and features of validation and test records never reach the
-// network parameters.
+// Validation and test records never reach the network parameters or the
+// preparation state.
 func TestRunTrainsOnTheTrainPartitionOnly(t *testing.T) {
-	dataset := read(t, fixture)
-	baseline := scores(t, run(t, dataset, config()).Network)
+	data := read(t, pixRiskFixture)
+	baseline := run(t, data, config())
 
-	changed := dataset
-	for _, line := range []int{7, 9} {
-		changed = replaceLine(t, changed, line, `"count":14`, `"count":0`)
-		changed = replaceLine(t, changed, line, `"label":"legitimate"`, `"label":"fraud"`)
+	changed := data
+	for _, line := range []int{6, 7} {
+		changed = replaceLine(t, changed, line, `"label":"fraud"`, `"label":"legitimate"`)
+		changed = replaceLine(t, changed, line, `"initiated_outgoing_pix_24h":{"count":9`, `"initiated_outgoing_pix_24h":{"count":900`)
 	}
-	changed = replaceLine(t, changed, 8, `"label":"fraud"`, `"label":"legitimate"`)
-	changed = replaceLine(t, changed, 8, `"loss_amount_cents":200000`, `"loss_amount_cents":0`)
+	changed = replaceLine(t, changed, 6, `"loss_amount_cents":250000`, `"loss_amount_cents":0`)
+	changed = replaceLine(t, changed, 7, `"loss_amount_cents":null`, `"loss_amount_cents":0`)
 
-	if got := scores(t, run(t, changed, config()).Network); !reflect.DeepEqual(got, baseline) {
-		t.Errorf("changing validation and test records changed the model: %v, want %v", got, baseline)
+	other := run(t, changed, config())
+	if !reflect.DeepEqual(other.State, baseline.State) || !reflect.DeepEqual(scores(t, other), scores(t, baseline)) {
+		t.Error("changing validation and test records changed the model")
 	}
 
-	// A change to one train record does change the model.
-	changedTrain := replaceLine(t, dataset, 5, `"count":14`, `"count":0`)
-	if got := scores(t, run(t, changedTrain, config()).Network); reflect.DeepEqual(got, baseline) {
+	changedTrain := run(t, replaceLine(t, data, 4, `"amount_cents":15000`, `"amount_cents":990000`), config())
+	if reflect.DeepEqual(scores(t, changedTrain), scores(t, baseline)) {
 		t.Error("changing a train record did not change the model")
 	}
 }
 
 func TestRunIsDeterministic(t *testing.T) {
-	dataset := read(t, fixture)
+	data := read(t, pixRiskFixture)
 
-	first := run(t, dataset, config())
-	second := run(t, dataset, config())
+	first := run(t, data, config())
+	second := run(t, data, config())
 
-	if !reflect.DeepEqual(first.Report, second.Report) {
-		t.Error("two runs produced different reports")
+	if !reflect.DeepEqual(first.Report, second.Report) || !reflect.DeepEqual(scores(t, first), scores(t, second)) {
+		t.Error("two runs produced different results")
 	}
 
-	if !reflect.DeepEqual(scores(t, first.Network), scores(t, second.Network)) {
-		t.Error("two runs produced different models")
+	changes := map[string]func(*trainingconfig.Config){
+		"seed":          func(c *trainingconfig.Config) { c.Seed = 7 },
+		"hidden layers": func(c *trainingconfig.Config) { c.HiddenLayers = []int{8, 3} },
+		"no hidden":     func(c *trainingconfig.Config) { c.HiddenLayers = []int{} },
+		"learning rate": func(c *trainingconfig.Config) { c.LearningRate = 0.1 },
+	}
+	for name, change := range changes {
+		cfg := config()
+		change(&cfg)
+		if reflect.DeepEqual(scores(t, run(t, data, cfg)), scores(t, first)) {
+			t.Errorf("changing the %s does not change the model", name)
+		}
+	}
+}
+
+func TestRunBuildsTheConfiguredArchitecture(t *testing.T) {
+	cfg := config()
+	cfg.HiddenLayers = []int{8, 3}
+	result := run(t, read(t, pixRiskFixture), cfg)
+
+	data, err := result.Network.MarshalWithProvenance(pixrisk.Schema,
+		trainingreport.Provenance(result.Report, strings.Repeat("0", 64)))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	other := config()
-	other.Seed = 7
-	if reflect.DeepEqual(scores(t, run(t, dataset, other).Network), scores(t, first.Network)) {
-		t.Error("the seed does not change the model")
+	var model struct {
+		InputSize int `json:"input_size"`
+		Layers    []struct {
+			Weights [][]float64 `json:"weights"`
+		} `json:"layers"`
+	}
+	if err := json.Unmarshal(data, &model); err != nil {
+		t.Fatal(err)
+	}
+
+	sizes := []int{model.InputSize}
+	for _, layer := range model.Layers {
+		sizes = append(sizes, len(layer.Weights))
+	}
+	if !reflect.DeepEqual(sizes, []int{62, 8, 3, 1}) {
+		t.Errorf("layer sizes = %v, want [62 8 3 1]", sizes)
 	}
 }
 
 func TestRunReportsTrainingLoss(t *testing.T) {
 	cfg := config()
-	cfg.Epochs = 50
+	cfg.MaxEpochs = 50
 
 	var epochs []int
 	var losses []float64
-	_, err := Run(bytes.NewReader(read(t, fixture)), cfg, func(epoch int, loss float64) {
+	_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, func(epoch int, loss float64) {
 		epochs = append(epochs, epoch)
 		losses = append(losses, loss)
 	})
@@ -248,58 +267,29 @@ func TestRunReportsTrainingLoss(t *testing.T) {
 }
 
 func TestRunStopsOnInvalidRecords(t *testing.T) {
-	data := read(t, "../docs/contracts/training-examples/dataset.jsonl")
-
-	_, err := Run(bytes.NewReader(data), config(), func(int, float64) {
-		t.Fatal("a dataset with invalid records must not be trained")
-	})
+	_, err := Run(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")),
+		config(), func(int, float64) { t.Fatal("a dataset with invalid records must not be trained") })
 
 	var invalid *InvalidDatasetError
-	if !errors.As(err, &invalid) {
-		t.Fatalf("Run() error = %v, want an InvalidDatasetError", err)
-	}
-
-	wantRecords := trainingdata.Counts{Total: 7, Usable: 3, Invalid: 2, Insufficient: 1, Immature: 1}
-	if invalid.Report.Records != wantRecords {
-		t.Errorf("records = %+v, want %+v", invalid.Report.Records, wantRecords)
-	}
-
-	if len(invalid.Report.Exclusions) != 4 {
-		t.Errorf("exclusions = %+v, want 4", invalid.Report.Exclusions)
-	}
-
-	var lines []int
-	for _, diagnostic := range invalid.Diagnostics {
-		if diagnostic.Message == "" {
-			t.Errorf("diagnostic %+v has no message", diagnostic)
-		}
-		lines = append(lines, diagnostic.Line)
-	}
-
-	if !reflect.DeepEqual(lines, []int{4, 6}) {
-		t.Errorf("diagnostic lines = %v, want [4 6]", lines)
+	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 2 {
+		t.Fatalf("Run() error = %v, want an InvalidDatasetError with 2 invalid records", err)
 	}
 }
 
 func TestRunRejectsTrainPartitionsWithoutBothClasses(t *testing.T) {
-	dataset := read(t, fixture)
-	firstIsFraud := replaceLine(t, dataset, 1, `"label":"legitimate"`, `"label":"fraud"`)
-
 	tests := map[string]struct {
-		dataset  []byte
 		trainEnd time.Time
 		want     evaluation.PartitionCounts
 	}{
-		"empty":           {dataset, time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC), evaluation.PartitionCounts{}},
-		"legitimate only": {dataset, time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC), evaluation.PartitionCounts{Legitimate: 1}},
-		"fraud only":      {firstIsFraud, time.Date(2025, 9, 10, 0, 0, 0, 0, time.UTC), evaluation.PartitionCounts{Fraud: 1}},
+		"empty":           {time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), evaluation.PartitionCounts{}},
+		"legitimate only": {time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC), evaluation.PartitionCounts{Legitimate: 3, Insufficient: 1}},
 	}
 
 	for name, test := range tests {
 		cfg := config()
-		cfg.Boundaries.TrainEnd = test.trainEnd
+		cfg.TrainEnd = test.trainEnd
 
-		_, err := Run(bytes.NewReader(test.dataset), cfg, nil)
+		_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, nil)
 
 		var untrainable *UntrainableError
 		if !errors.As(err, &untrainable) {
@@ -322,25 +312,116 @@ func (r failingReader) Read([]byte) (int, error) {
 }
 
 func TestRunRejectsInvalidConfigurationsBeforeReading(t *testing.T) {
-	tests := map[string]func(*Config){
-		"zero epochs":            func(c *Config) { c.Epochs = 0 },
-		"zero learning rate":     func(c *Config) { c.LearningRate = 0 },
-		"threshold above 1":      func(c *Config) { c.Threshold = 1.5 },
-		"negative threshold":     func(c *Config) { c.Threshold = -0.1 },
-		"missing train_end":      func(c *Config) { c.Boundaries.TrainEnd = time.Time{} },
-		"reversed boundaries":    func(c *Config) { c.Boundaries.TrainEnd = c.Boundaries.ValidationEnd.Add(time.Second) },
-		"equal boundaries":       func(c *Config) { c.Boundaries.TrainEnd = c.Boundaries.ValidationEnd },
-		"infinite learning rate": func(c *Config) { c.LearningRate = 1 / zero },
+	tests := map[string]func(*trainingconfig.Config){
+		"other schema":           func(c *trainingconfig.Config) { c.FeatureSchema = "transaction-features-v1" },
+		"other algorithm":        func(c *trainingconfig.Config) { c.Algorithm = "adam" },
+		"other loss":             func(c *trainingconfig.Config) { c.Loss = "cross-entropy" },
+		"other activation":       func(c *trainingconfig.Config) { c.Activation = "relu" },
+		"other checkpoint":       func(c *trainingconfig.Config) { c.Checkpoint = "best_validation" },
+		"other threshold policy": func(c *trainingconfig.Config) { c.Threshold.Policy = "max_f1" },
+		"zero epochs":            func(c *trainingconfig.Config) { c.MaxEpochs = 0 },
+		"too many epochs":        func(c *trainingconfig.Config) { c.MaxEpochs = trainingconfig.MaxEpochs + 1 },
+		"zero learning rate":     func(c *trainingconfig.Config) { c.LearningRate = 0 },
+		"threshold above 1":      func(c *trainingconfig.Config) { c.Threshold.Value = 1.5 },
+		"empty hidden layer":     func(c *trainingconfig.Config) { c.HiddenLayers = []int{0} },
+		"too wide":               func(c *trainingconfig.Config) { c.HiddenLayers = []int{257} },
+		"too deep":               func(c *trainingconfig.Config) { c.HiddenLayers = []int{1, 1, 1, 1, 1} },
+		"reversed boundaries":    func(c *trainingconfig.Config) { c.TrainEnd = c.ValidationEnd.Add(time.Second) },
+		"negative seed":          func(c *trainingconfig.Config) { c.Seed = -1 },
 	}
 
 	for name, change := range tests {
 		cfg := config()
 		change(&cfg)
 
-		if _, err := Run(failingReader{t}, cfg, nil); err == nil {
+		if _, err := Run(context.Background(), failingReader{t}, cfg, nil); err == nil {
 			t.Errorf("%s: Run() error = nil, want an error", name)
 		}
 	}
 }
 
-var zero float64
+// cancellingReader serves data and cancels a context on its first read.
+type cancellingReader struct {
+	data   io.Reader
+	cancel context.CancelFunc
+	read   int
+}
+
+func (r *cancellingReader) Read(p []byte) (int, error) {
+	n, err := r.data.Read(p)
+	r.read += n
+	r.cancel()
+	return n, err
+}
+
+// Cancellation is checked every 1,024 records while reading and every
+// epoch while training.
+func TestRunStopsWhenCanceled(t *testing.T) {
+	fixture := read(t, pixRiskFixture)
+	large := bytes.Repeat(fixture, 400) // 3,200 records
+
+	ctx, cancel := context.WithCancel(context.Background())
+	reader := &cancellingReader{data: bytes.NewReader(large), cancel: cancel}
+
+	_, err := Run(ctx, reader, config(), nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+
+	// At most 1,024 records, plus one read buffer, after the cancellation.
+	if limit := 1024*len(fixture)/8 + 128*1024; reader.read > limit {
+		t.Errorf("read %d bytes after cancellation, want at most %d", reader.read, limit)
+	}
+
+	ctx, cancel = context.WithCancel(context.Background())
+	var epochs []int
+	_, err = Run(ctx, bytes.NewReader(fixture), config(), func(epoch int, _ float64) {
+		epochs = append(epochs, epoch)
+		if epoch == 9 {
+			cancel()
+		}
+	})
+
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Run() error = %v, want context.Canceled", err)
+	}
+	if len(epochs) != 10 {
+		t.Errorf("trained %d epochs, want to stop right after epoch 9", len(epochs))
+	}
+}
+
+// crossArchitectureTolerance bounds the difference between scores trained
+// on different CPU architectures. Training is bit-for-bit reproducible only
+// on one platform: fused multiply-add and math.Exp differ between arm64 and
+// amd64 in their last bits. On this fixture the measured difference is at
+// most about 6e-18.
+const crossArchitectureTolerance = 1e-9
+
+// Scores trained with the baseline configuration example, recorded on
+// arm64. CI runs this test on amd64.
+func TestRunMatchesReferenceScoresAcrossArchitectures(t *testing.T) {
+	cfg, err := trainingconfig.Decode(read(t, "../docs/contracts/training-config-examples/01-baseline.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reference := []float64{
+		0.0048212408770026824, // line 1
+		0.0060844999361150337, // line 2
+		0.0064366893694704549, // line 4
+		0.98956233721487585,   // line 5
+		0.99093897463876834,   // line 6
+		0.97385018870668616,   // line 7
+	}
+
+	got := scores(t, run(t, read(t, pixRiskFixture), cfg))
+	if len(got) != len(reference) {
+		t.Fatalf("got %d scores, want %d", len(got), len(reference))
+	}
+
+	for i, want := range reference {
+		if diff := got[i] - want; diff > crossArchitectureTolerance || diff < -crossArchitectureTolerance {
+			t.Errorf("score %d = %.17g, want %.17g within %g", i, got[i], want, crossArchitectureTolerance)
+		}
+	}
+}

@@ -1,0 +1,13 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/architecture/dropout",
+      "code": "unknown_member"
+    },
+    {
+      "path": "/epochs",
+      "code": "unknown_member"
+    }
+  ]
+}

@@ -13,6 +13,10 @@ type Sample struct {
 
 // TrainBatch performs one gradient descent update.
 // It returns the mean squared error measured before the update.
+//
+// TrainBatch changes no parameter unless the whole step is finite: it
+// fails when a parameter, an input, a gradient, or an updated parameter is
+// not finite, and the network keeps its previous parameters.
 func (n *Network) TrainBatch(
 	samples []Sample,
 	learningRate float64,
@@ -28,6 +32,12 @@ func (n *Network) TrainBatch(
 	}
 
 	outputSize := len(n.layers[len(n.layers)-1].biases)
+
+	for layerIndex, layer := range n.layers {
+		if !allFinite(layer) {
+			return 0, fmt.Errorf("layer %d: a parameter is not finite", layerIndex)
+		}
+	}
 
 	// Validate all samples before changing any parameters.
 	for index, sample := range samples {
@@ -152,21 +162,57 @@ func (n *Network) TrainBatch(
 		}
 	}
 
-	// Apply averaged gradients after processing the entire batch.
-	scale := learningRate / float64(len(samples))
-
-	for layerIndex := range n.layers {
-		for neuron := range n.layers[layerIndex].biases {
-			n.layers[layerIndex].biases[neuron] -=
-				scale * gradients[layerIndex].biases[neuron]
-
-			for input := range n.layers[layerIndex].weights[neuron] {
-				n.layers[layerIndex].weights[neuron][input] -=
-					scale * gradients[layerIndex].weights[neuron][input]
-			}
+	// A non-finite output makes every gradient of its neuron non-finite,
+	// so finite gradients also guarantee a finite loss.
+	for layerIndex, gradient := range gradients {
+		if !allFinite(gradient) {
+			return 0, fmt.Errorf("training diverged: a gradient of layer %d is not finite", layerIndex)
 		}
 	}
 
-	return totalLoss /
-		(float64(len(samples)) * float64(outputSize)), nil
+	// Compute averaged updates for the entire batch, and apply them only
+	// when every updated parameter is finite.
+	scale := learningRate / float64(len(samples))
+	updated := make([]denseLayer, len(n.layers))
+
+	for layerIndex, layer := range n.layers {
+		updated[layerIndex] = denseLayer{
+			weights: make([][]float64, len(layer.weights)),
+			biases:  make([]float64, len(layer.biases)),
+		}
+
+		for neuron := range layer.biases {
+			updated[layerIndex].biases[neuron] = layer.biases[neuron] -
+				scale*gradients[layerIndex].biases[neuron]
+
+			updated[layerIndex].weights[neuron] = make([]float64, len(layer.weights[neuron]))
+			for input := range layer.weights[neuron] {
+				updated[layerIndex].weights[neuron][input] = layer.weights[neuron][input] -
+					scale*gradients[layerIndex].weights[neuron][input]
+			}
+		}
+
+		if !allFinite(updated[layerIndex]) {
+			return 0, fmt.Errorf("training diverged: an update of layer %d is not finite", layerIndex)
+		}
+	}
+
+	n.layers = updated
+
+	return totalLoss / (float64(len(samples)) * float64(outputSize)), nil
+}
+
+// allFinite reports whether every weight and bias of a layer is finite.
+func allFinite(layer denseLayer) bool {
+	for neuron, weights := range layer.weights {
+		if math.IsNaN(layer.biases[neuron]) || math.IsInf(layer.biases[neuron], 0) {
+			return false
+		}
+		for _, weight := range weights {
+			if math.IsNaN(weight) || math.IsInf(weight, 0) {
+				return false
+			}
+		}
+	}
+	return true
 }

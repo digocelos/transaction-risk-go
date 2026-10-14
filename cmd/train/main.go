@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -9,16 +10,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
-	"time"
+	"syscall"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
-	"github.com/digocelos/transaction-risk-go/internal/strictjson"
 	"github.com/digocelos/transaction-risk-go/training"
+	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
-	"github.com/digocelos/transaction-risk-go/transaction"
 )
 
 // Exit codes. A dataset with invalid records always uses 2.
@@ -41,28 +42,30 @@ type invalidOutput struct {
 	Dataset trainingdata.Report `json:"dataset"`
 }
 
-const usage = `usage: train -dataset FILE -model-output FILE -report-output FILE
-             -train-end TIMESTAMP -validation-end TIMESTAMP
-             -seed N -epochs N -learning-rate RATE -threshold SCORE
+const usage = `usage: train -config FILE -dataset FILE -model-output FILE -report-output FILE
 
-Trains the 4-4-1 baseline on the train partition of a pix-training-example-v1
-dataset, evaluates the validation and test partitions, and writes the model
-and its training report. Every flag is required.
+Trains the network a pix-training-config-v1 configuration describes on the
+train partition of a pix-training-example-v2 dataset, prepared with
+pix-risk-v1, evaluates the validation and test partitions, and writes the
+model and its training report. Every flag is required.
 `
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	os.Exit(run(ctx, os.Args[1:], os.Stdout, os.Stderr))
 }
 
 // options are the parsed command-line flags.
 type options struct {
-	dataset, modelOutput, reportOutput string
-	config                             training.Config
+	config, dataset, modelOutput, reportOutput string
 }
 
 // run trains a model from the flags in args. The result goes to stdout as
-// one JSON object; progress and operational failures go to stderr.
-func run(args []string, stdout, stderr io.Writer) int {
+// one JSON object; progress and operational failures go to stderr. When ctx
+// is canceled, run stops and writes nothing.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	fail := func(format string, a ...any) int {
 		fmt.Fprintf(stderr, "train: "+format+"\n", a...)
 		return exitFailure
@@ -76,20 +79,33 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return fail("%v", err)
 	}
 
+	config, err := readConfig(opts.config)
+
+	var invalidConfig *trainingconfig.ValidationError
+	switch {
+	case errors.As(err, &invalidConfig):
+		for _, issue := range invalidConfig.Issues {
+			fmt.Fprintf(stderr, "train: %s: %s: %s: %s\n", opts.config, issue.Path, issue.Code, issue.Message)
+		}
+		return fail("%s is not a valid %s configuration", opts.config, trainingconfig.Version)
+	case err != nil:
+		return fail("%v", err)
+	}
+
 	file, err := os.Open(opts.dataset)
 	if err != nil {
 		return fail("%v", err)
 	}
 	defer file.Close()
 
-	interval := max(1, opts.config.Epochs/10)
+	interval := max(1, config.MaxEpochs/10)
 	progress := func(epoch int, loss float64) {
-		if epoch%interval == 0 || epoch == opts.config.Epochs-1 {
-			fmt.Fprintf(stderr, "train: epoch %d of %d: training loss %.6f\n", epoch, opts.config.Epochs, loss)
+		if epoch%interval == 0 || epoch == config.MaxEpochs-1 {
+			fmt.Fprintf(stderr, "train: epoch %d of %d: training loss %.6f\n", epoch, config.MaxEpochs, loss)
 		}
 	}
 
-	result, err := training.Run(file, opts.config, progress)
+	result, err := training.Run(ctx, file, config, progress)
 
 	var invalid *training.InvalidDatasetError
 	var untrainable *training.UntrainableError
@@ -105,7 +121,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "train: %v\n", invalid)
 		return write(stdout, stderr, exitInvalidDataset, invalidOutput{Status: "invalid_dataset", Dataset: invalid.Report})
 	case errors.As(err, &untrainable):
-		return fail("%v; move -train-end or add records", untrainable)
+		return fail("%v; move boundaries.train_end in the configuration or add records", untrainable)
+	case errors.Is(err, context.Canceled):
+		return fail("canceled; nothing was written")
 	case err != nil:
 		return fail("%v", err)
 	}
@@ -119,10 +137,15 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	reportSHA256 := sha256Hex(reportData)
-	modelData, err := result.Network.MarshalWithProvenance(transaction.FeatureSchema,
+	modelData, err := result.Network.MarshalWithProvenance(config.FeatureSchema,
 		trainingreport.Provenance(report, reportSHA256))
 	if err != nil {
 		return fail("%v", err)
+	}
+
+	// A late cancellation still writes nothing.
+	if err := ctx.Err(); err != nil {
+		return fail("canceled; nothing was written")
 	}
 
 	// The report is written first: the model binds it by hash.
@@ -143,11 +166,20 @@ func run(args []string, stdout, stderr io.Writer) int {
 	})
 }
 
+func readConfig(path string) (trainingconfig.Config, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return trainingconfig.Config{}, err
+	}
+	defer file.Close()
+
+	return trainingconfig.Read(file)
+}
+
 // parse reads and checks the flags. Every flag is required, and the two
-// outputs must differ from each other and from the dataset.
+// outputs must differ from each other and from both inputs.
 func parse(args []string, stderr io.Writer) (options, error) {
 	var opts options
-	var trainEnd, validationEnd string
 
 	fs := flag.NewFlagSet("train", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -156,15 +188,10 @@ func parse(args []string, stderr io.Writer) (options, error) {
 		fs.PrintDefaults()
 	}
 
-	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v1 dataset `file` (JSON Lines)")
+	fs.StringVar(&opts.config, "config", "", "pix-training-config-v1 configuration `file`")
+	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
 	fs.StringVar(&opts.modelOutput, "model-output", "", "`file` to write the trained model to")
 	fs.StringVar(&opts.reportOutput, "report-output", "", "`file` to write the training report to")
-	fs.StringVar(&trainEnd, "train-end", "", "last decision `timestamp` of the train partition, RFC 3339 with an offset")
-	fs.StringVar(&validationEnd, "validation-end", "", "last decision `timestamp` of the validation partition, RFC 3339 with an offset")
-	fs.Int64Var(&opts.config.Seed, "seed", 0, "seed of the initial network weights")
-	fs.IntVar(&opts.config.Epochs, "epochs", 0, "number of full-batch gradient descent epochs")
-	fs.Float64Var(&opts.config.LearningRate, "learning-rate", 0, "gradient descent learning `rate`")
-	fs.Float64Var(&opts.config.Threshold, "threshold", 0, "decision `score`: a score at or above it predicts fraud")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -187,30 +214,16 @@ func parse(args []string, stderr io.Writer) (options, error) {
 		return options{}, fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}
 
-	var err error
-	if opts.config.Boundaries.TrainEnd, err = timestamp("train-end", trainEnd); err != nil {
-		return options{}, err
-	}
-	if opts.config.Boundaries.ValidationEnd, err = timestamp("validation-end", validationEnd); err != nil {
-		return options{}, err
-	}
-
 	switch {
 	case samePath(opts.modelOutput, opts.reportOutput):
 		return options{}, errors.New("-model-output and -report-output must be different files")
 	case samePath(opts.modelOutput, opts.dataset), samePath(opts.reportOutput, opts.dataset):
 		return options{}, errors.New("an output must not overwrite the dataset")
+	case samePath(opts.modelOutput, opts.config), samePath(opts.reportOutput, opts.config):
+		return options{}, errors.New("an output must not overwrite the configuration")
 	}
 
 	return opts, nil
-}
-
-func timestamp(name, value string) (time.Time, error) {
-	t, ok := strictjson.ParseTimestamp(value)
-	if !ok {
-		return time.Time{}, fmt.Errorf("-%s: %q is not an RFC 3339 timestamp with an offset, such as 2025-06-30T23:59:59Z", name, value)
-	}
-	return t, nil
 }
 
 // samePath reports whether two paths name the same file.

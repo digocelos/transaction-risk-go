@@ -59,7 +59,8 @@ func NewNetwork(seed int64, sizes ...int) (*Network, error) {
 	return network, nil
 }
 
-// Predict computes outputs without changing the network parameters.
+// Predict computes outputs without changing the network parameters. It
+// rejects non-finite inputs.
 func (n *Network) Predict(inputs []float64) ([]float64, error) {
 	if len(inputs) != n.inputSize {
 		return nil, fmt.Errorf(
@@ -67,6 +68,12 @@ func (n *Network) Predict(inputs []float64) ([]float64, error) {
 			n.inputSize,
 			len(inputs),
 		)
+	}
+
+	for _, input := range inputs {
+		if math.IsNaN(input) || math.IsInf(input, 0) {
+			return nil, fmt.Errorf("inputs must be finite")
+		}
 	}
 
 	current := inputs
