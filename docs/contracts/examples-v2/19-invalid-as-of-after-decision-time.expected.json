@@ -1,0 +1,9 @@
+{
+  "status": "invalid_input",
+  "issues": [
+    {
+      "path": "/observations/payer_device/registration/as_of",
+      "code": "as_of_after_decision_time"
+    }
+  ]
+}

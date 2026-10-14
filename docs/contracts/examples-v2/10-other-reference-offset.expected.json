@@ -1,0 +1,254 @@
+{
+  "status": "prepared",
+  "features": [
+    {
+      "name": "amount",
+      "value": 12.429220196836383
+    },
+    {
+      "name": "recipient_legal_person",
+      "value": 0.0
+    },
+    {
+      "name": "no_pix_key",
+      "value": 0.0
+    },
+    {
+      "name": "no_payer_device",
+      "value": 0.0
+    },
+    {
+      "name": "local_time_sin",
+      "value": -0.2719303567132641
+    },
+    {
+      "name": "local_time_cos",
+      "value": -0.9623169338101647
+    },
+    {
+      "name": "limit_period_nighttime",
+      "value": 0.0
+    },
+    {
+      "name": "limit_period_daily",
+      "value": 0.0
+    },
+    {
+      "name": "limit_period_none",
+      "value": 0.0
+    },
+    {
+      "name": "settled_count_90d",
+      "value": 3.4657359027997265
+    },
+    {
+      "name": "initiated_count_24h",
+      "value": 1.0986122886681098
+    },
+    {
+      "name": "recipient_payments_365d",
+      "value": 0.0
+    },
+    {
+      "name": "amount_to_median_90d",
+      "value": 2.302585092994045
+    },
+    {
+      "name": "amount_to_median_90d_known",
+      "value": 1.0
+    },
+    {
+      "name": "limit_utilization",
+      "value": 0.5538851132264376
+    },
+    {
+      "name": "limit_utilization_known",
+      "value": 1.0
+    },
+    {
+      "name": "limit_zero",
+      "value": 0.0
+    },
+    {
+      "name": "recipient_pre_registered",
+      "value": 0.0
+    },
+    {
+      "name": "recipient_pre_registered_known",
+      "value": 1.0
+    },
+    {
+      "name": "device_settled_count_90d",
+      "value": 2.70805020110221
+    },
+    {
+      "name": "device_settled_count_90d_known",
+      "value": 1.0
+    },
+    {
+      "name": "device_registered",
+      "value": 1.0
+    },
+    {
+      "name": "device_registered_known",
+      "value": 1.0
+    },
+    {
+      "name": "recipient_account_age",
+      "value": 7.904703913873747
+    },
+    {
+      "name": "recipient_account_age_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_link_age",
+      "value": 6.113682179832232
+    },
+    {
+      "name": "key_ownership_age",
+      "value": 7.202661196523238
+    },
+    {
+      "name": "key_type_cpf",
+      "value": 0.0
+    },
+    {
+      "name": "key_type_cnpj",
+      "value": 0.0
+    },
+    {
+      "name": "key_type_phone",
+      "value": 0.0
+    },
+    {
+      "name": "key_type_email",
+      "value": 0.0
+    },
+    {
+      "name": "key_type_evp",
+      "value": 1.0
+    },
+    {
+      "name": "key_type_other",
+      "value": 0.0
+    },
+    {
+      "name": "key_entry_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_settlements_d90",
+      "value": 2.5649493574615367
+    },
+    {
+      "name": "person_settlements_d90_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_settlements_m12",
+      "value": 3.713572066704308
+    },
+    {
+      "name": "person_settlements_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_fraud_markers_d90",
+      "value": 0.0
+    },
+    {
+      "name": "person_fraud_markers_d90_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_fraud_markers_m12",
+      "value": 0.0
+    },
+    {
+      "name": "person_fraud_markers_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_fraud_reporters_m12",
+      "value": 0.0
+    },
+    {
+      "name": "person_fraud_reporters_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_open_report_reporters",
+      "value": 0.0
+    },
+    {
+      "name": "person_open_report_reporters_known",
+      "value": 1.0
+    },
+    {
+      "name": "person_registered_accounts",
+      "value": 1.0986122886681098
+    },
+    {
+      "name": "person_registered_accounts_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_settlements_d90",
+      "value": 2.302585092994046
+    },
+    {
+      "name": "key_settlements_d90_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_settlements_m12",
+      "value": 3.4657359027997265
+    },
+    {
+      "name": "key_settlements_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_fraud_markers_d90",
+      "value": 0.0
+    },
+    {
+      "name": "key_fraud_markers_d90_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_fraud_markers_m12",
+      "value": 0.0
+    },
+    {
+      "name": "key_fraud_markers_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_fraud_reporters_m12",
+      "value": 0.0
+    },
+    {
+      "name": "key_fraud_reporters_m12_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_open_report_reporters",
+      "value": 0.0
+    },
+    {
+      "name": "key_open_report_reporters_known",
+      "value": 1.0
+    },
+    {
+      "name": "key_distinct_accounts_m12",
+      "value": 0.6931471805599453
+    },
+    {
+      "name": "key_distinct_accounts_m12_known",
+      "value": 1.0
+    }
+  ],
+  "notes": []
+}

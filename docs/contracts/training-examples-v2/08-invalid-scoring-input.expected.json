@@ -1,0 +1,31 @@
+{
+  "dataset_report_version": "pix-training-dataset-report-v1",
+  "training_example_version": "pix-training-example-v2",
+  "feature_schema": "pix-risk-v1",
+  "label_maturity_days": 90,
+  "dataset_sha256": "474b25919299f63f2b64358696887613c52155eb87963ac2c654d31b476d8c52",
+  "dataset_bytes": 2715,
+  "records": {
+    "total": 1,
+    "usable": 0,
+    "invalid": 1,
+    "insufficient": 0,
+    "immature": 0
+  },
+  "usable_labels": {
+    "fraud": 0,
+    "legitimate": 0
+  },
+  "exclusions": [
+    {
+      "line": 1,
+      "category": "invalid",
+      "issues": [
+        {
+          "path": "/scoring_input/pix_payment/reference_time_offset",
+          "code": "invalid_format"
+        }
+      ]
+    }
+  ]
+}

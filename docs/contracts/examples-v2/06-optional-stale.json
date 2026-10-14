@@ -1,0 +1,178 @@
+{
+  "contract_version": "pix-payer-input-v2",
+  "decision_time": "2026-10-13T14:03:07.120-03:00",
+  "pix_payment": {
+    "amount_cents": 250000,
+    "payer_device_usage": "payer_device",
+    "recipient_key_usage": "pix_key",
+    "recipient_person_type": "NATURAL_PERSON",
+    "reference_time_offset": "-03:00",
+    "payer_limit_period": "daytime"
+  },
+  "observations": {
+    "payer_account": {
+      "settled_outgoing_pix_90d": {
+        "count": 31,
+        "median_amount_cents": 25000,
+        "as_of": "2026-10-13T06:00:00Z"
+      },
+      "initiated_outgoing_pix_24h": {
+        "count": 2,
+        "as_of": "2026-10-13T17:03:06.874Z"
+      },
+      "period_limit": {
+        "limit_cents": 500000,
+        "consumed_cents": 120000,
+        "as_of": "2026-10-13T16:58:07.119Z"
+      }
+    },
+    "payer_device": {
+      "settled_outgoing_pix_90d": {
+        "count": 14,
+        "as_of": "2026-10-13T06:00:00Z"
+      },
+      "registration": {
+        "status": "registered",
+        "as_of": "2026-10-13T16:58:07.119Z"
+      }
+    },
+    "recipient_person": {
+      "settled_pix_from_payer_account_365d": {
+        "count": 0,
+        "as_of": "2026-10-13T06:00:00Z"
+      },
+      "spi": {
+        "settlements": {
+          "d90": 12,
+          "m12": 40,
+          "m60": 95
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "fraud_markers": {
+        "application_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "mule_accounts": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "scammer_accounts": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "other_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "unknown_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "distinct_fraud_reporters": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "infraction_reports": {
+        "open_reports": 0,
+        "open_reports_distinct_reporters": 0,
+        "rejected_reports": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "entries": {
+        "registered_accounts": 2,
+        "as_of": "2026-10-13T17:03:06.105Z"
+      }
+    },
+    "recipient_account": {
+      "entry": {
+        "opening_date": "2019-05-14T03:00:00Z",
+        "as_of": "2026-10-13T17:03:05.912Z"
+      },
+      "pre_registration": {
+        "status": "not_registered",
+        "as_of": "2026-10-13T17:03:06.874Z"
+      }
+    },
+    "recipient_pix_key": {
+      "entry": {
+        "key_type": "EVP",
+        "creation_date": "2025-07-19T10:02:45.318Z",
+        "key_ownership_date": "2023-02-08T19:41:12.004Z",
+        "as_of": "2026-10-13T17:03:05.912Z"
+      },
+      "spi": {
+        "settlements": {
+          "d90": 9,
+          "m12": 31,
+          "m60": 70
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "fraud_markers": {
+        "application_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "mule_accounts": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "scammer_accounts": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "other_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "unknown_frauds": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "distinct_fraud_reporters": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "infraction_reports": {
+        "open_reports": 0,
+        "open_reports_distinct_reporters": 0,
+        "rejected_reports": {
+          "d90": 0,
+          "m12": 0,
+          "m60": 0
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      },
+      "entries": {
+        "distinct_accounts": {
+          "d90": 1,
+          "m12": 1,
+          "m60": 2
+        },
+        "as_of": "2026-10-13T17:03:06.105Z"
+      }
+    }
+  }
+}

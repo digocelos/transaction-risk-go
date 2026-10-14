@@ -1,0 +1,9 @@
+{
+  "status": "invalid_input",
+  "issues": [
+    {
+      "path": "/contract_version",
+      "code": "unsupported_contract_version"
+    }
+  ]
+}

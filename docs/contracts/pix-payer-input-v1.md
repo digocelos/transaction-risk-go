@@ -1,6 +1,6 @@
 # Input contract `pix-payer-input-v1`
 
-**Status:** Normative for `pix-payer-input-v1`.
+**Status:** Normative for `pix-payer-input-v1`. Superseded by [`pix-payer-input-v2`](pix-payer-input-v2.md) (ADR 0013); it is still decoded for `cmd/predict` until that command migrates, and is then removed.
 
 ## 1. Scope
 

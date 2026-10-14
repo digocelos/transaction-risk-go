@@ -1,6 +1,6 @@
 # Feature schema `pix-risk-v1`
 
-**Status:** Specification. It is implemented by issue #26; until then the toolkit still converts `pix-payer-input-v1` to `transaction-features-v1`.
+**Status:** Specification, implemented by the `pixrisk` package. Training and scoring commands still use `transaction-features-v1` until they migrate ([section 19](#19-breaking-migration)).
 
 ## 1. Scope
 
@@ -21,8 +21,8 @@ Each identifier changes for its own reasons and is recorded separately (ADR 0003
 
 | Identifier | What it versions | Defined by |
 |---|---|---|
-| `pix-payer-input-v2` | The scoring input an integrator supplies. Replaces `pix-payer-input-v1` (ADR 0013). | [Section 5](#5-input-contract-pix-payer-input-v2) of this document; the normative contract document is rewritten by #26. |
-| `pix-training-example-v2` | A training example embedding a `pix-payer-input-v2` scoring input. Replaces `pix-training-example-v1`. | [Section 5.6](#56-training-example-pix-training-example-v2). |
+| `pix-payer-input-v2` | The scoring input an integrator supplies. Replaces `pix-payer-input-v1` (ADR 0013). | [`pix-payer-input-v2`](../contracts/pix-payer-input-v2.md); [section 5](#5-input-contract-pix-payer-input-v2) summarizes the changes. |
+| `pix-training-example-v2` | A training example embedding a `pix-payer-input-v2` scoring input. Replaces `pix-training-example-v1`. | [`pix-training-example-v2`](../contracts/pix-training-example-v2.md). |
 | `pix-risk-v1` | The ordered features, their formulas, availability rules, fixed transformations, and the layout of the fitted preparation state. Replaces `transaction-features-v1`. | This document. |
 | Preparation state | The values fitted on the train partition for one model ([section 11](#11-fitted-standardization)). It has no version of its own: its layout belongs to `pix-risk-v1`. | This document. |
 | Training configuration | Architecture, optimizer, epochs, boundaries, selection policy. | #27. |
@@ -469,7 +469,7 @@ Support means the software produces a vector for these payments. It says nothing
 }
 ```
 
-The elided groups are exactly those of [`pix-payer-input-v1` example 01](../contracts/examples/01-complete.json); #26 publishes the full file. Every source is known and fresh, so preparation returns 62 values and no notes. Values before standardization, rounded to six decimals for presentation; golden tests fix the exact binary64 values:
+The elided groups are exactly those of [`pix-payer-input-v1` example 01](../contracts/examples/01-complete.json); the full file is [`examples-v2/01-complete.json`](../contracts/examples-v2/01-complete.json), and every variant below has its own file and expected outcome in that directory. Every source is known and fresh, so preparation returns 62 values and no notes. Values before standardization, rounded to six decimals for presentation; golden tests fix the exact binary64 values:
 
 | # | Name | Value | # | Name | Value |
 |---|---|---|---|---|---|
@@ -549,10 +549,10 @@ Adding any of them requires a new feature schema version.
 
 ## 19. Breaking migration
 
-No compatibility with the v1 workflow is kept (ADR 0013). The migration is:
+No compatibility with the v1 workflow is kept once the migration ends (ADR 0013). Each consumer moves to version 2 in its own issue, so the toolkit keeps working between them:
 
-1. `pix-payer-input-v1` is no longer accepted; `pix-payer-input-v2` is the only supported contract version. The normative contract document, its examples, and the decoder are updated for v2 (#26).
-2. `pix-training-example-v1` is replaced by `pix-training-example-v2`, and the training examples are regenerated (#26).
-3. `transaction-features-v1` and its conversion are replaced by `pix-risk-v1` preparation, shared by training, evaluation, and inference (#26). `no_history` and `not_applicable` stop being blockers.
-4. Models trained on `transaction-features-v1`, including the committed `model.json`, cannot score `pix-risk-v1` inputs. A new artifact format carries the preparation state (#29).
-5. `cmd/predict` requires an explicit model path and reports `pix-risk-v1` (#31). `cmd/demo` and `model.json` are retired (#33).
+1. `pix-payer-input-v2` and `pix-training-example-v2`, their decoders, and `pix-risk-v1` preparation, shared by training, evaluation, and inference, are added (#26). Callers state which contract versions they accept. `no_history` and `not_applicable` are not blockers in `pix-risk-v1`.
+2. Training moves to `pix-risk-v1` with a versioned configuration (#27), and model selection follows (#28).
+3. A new artifact format carries the preparation state (#29). Models trained on `transaction-features-v1`, including the committed `model.json`, cannot score `pix-risk-v1` inputs.
+4. `cmd/predict` requires an explicit model path, reads `pix-payer-input-v2`, and reports `pix-risk-v1` (#31).
+5. `pix-payer-input-v1`, `pix-training-example-v1`, `transaction-features-v1`, `cmd/demo`, and `model.json` are removed (#33), after which the toolkit accepts version 2 only.
