@@ -6,7 +6,9 @@ import (
 	"errors"
 	"math"
 	"testing"
+	"time"
 
+	"github.com/digocelos/transaction-risk-go/internal/synthetic"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 )
@@ -101,5 +103,53 @@ func TestRunRejectsInvalidLimitsBeforeReading(t *testing.T) {
 
 	if DefaultLimits != limits(trainingdata.DefaultMaxRecords, DefaultMaxTrainingWork) {
 		t.Errorf("DefaultLimits = %+v", DefaultLimits)
+	}
+}
+
+// countingContext counts its checks and is never canceled.
+type countingContext struct {
+	context.Context
+	checks int
+}
+
+func (c *countingContext) Err() error {
+	c.checks++
+	return nil
+}
+
+// Cancellation is checked every 1,024 records while reading, before every
+// epoch, every 1,024 samples within an epoch, and every 1,024 records
+// while scoring a partition, so a canceled run stops within one of those
+// steps.
+func TestRunChecksCancellationWithinEpochs(t *testing.T) {
+	var data bytes.Buffer
+	if err := synthetic.Generate(&data, synthetic.DefaultOptions(8000, 11)); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := config()
+	cfg.TrainEnd = time.Date(2025, 9, 30, 0, 0, 0, 0, time.UTC)
+	cfg.ValidationEnd = time.Date(2026, 1, 31, 0, 0, 0, 0, time.UTC)
+	cfg.MaxEpochs = 2
+
+	prepared, err := PrepareDataset(context.Background(), bytes.NewReader(data.Bytes()), cfg.Boundaries(), DefaultLimits.MaxRecords)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prepared.Train) <= 2048 || len(prepared.Validation) <= 1024 || len(prepared.Test) <= 1024 {
+		t.Fatalf("partitions too small: %d, %d, %d", len(prepared.Train), len(prepared.Validation), len(prepared.Test))
+	}
+
+	ctx := &countingContext{Context: context.Background()}
+	if _, err := Run(ctx, bytes.NewReader(data.Bytes()), cfg, DefaultLimits, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	blocks := func(n int) int { return (n + 1023) / 1024 }
+	want := 8000/1024 + // reading
+		cfg.MaxEpochs*(1+blocks(len(prepared.Train))) + // epochs
+		blocks(len(prepared.Validation)) + blocks(len(prepared.Test)) // final metrics
+	if ctx.checks < want {
+		t.Errorf("checked cancellation %d times, want at least %d", ctx.checks, want)
 	}
 }
