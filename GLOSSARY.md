@@ -80,11 +80,21 @@ The state of an observation, or of a provider value the source allows to be omit
 _Avoid_: Null, empty, default, unknown
 
 **Insufficient input**:
-The outcome when a valid scoring input lacks information that a feature schema needs; no score is produced.
+The outcome when a required fact that a feature schema needs is missing or stale in a valid scoring input; no score is produced.
 _Avoid_: Invalid input
 
+**Required fact**:
+Information a feature schema cannot do without, such as the payer account histories; when it is missing or stale, the input is insufficient.
+
+**Optional observation**:
+An observation a feature schema can do without; when it is missing, stale, or not applicable, the features it feeds are unavailable instead of blocking the score.
+
+**Availability indicator**:
+A feature that is 1 when another feature holds a fact and 0 when that feature is unavailable and holds the neutral value 0.
+_Avoid_: Default flag, imputation flag
+
 **Stale**:
-The state of a known observation whose age at decision time exceeds the maximum age a feature schema accepts; it makes the input insufficient, not invalid.
+The state of a known observation whose age at decision time exceeds the maximum age a feature schema accepts; a stale required fact makes the input insufficient, and a stale optional observation makes its features unavailable. It never makes the input invalid.
 
 ## Time
 
@@ -102,6 +112,10 @@ A marker whose meaning a data provider defines; it is never presumed to be the l
 **DICT group watermark**:
 The instant of the last event DICT considered in one statistics group; it is neither the query instant nor a measure of freshness.
 
+**Reference time offset**:
+The UTC offset of the time reference the payer's PSP uses for the payer's limit periods at decision time, either the payer's registered address or Brasília time; the toolkit uses it only to compute the local time of day.
+_Avoid_: Time zone, local offset
+
 **Contract-defined lookback window**:
 A rolling period of fixed duration, defined by the input contract, that ends at an observation's as-of time and does not depend on any time zone.
 _Avoid_: Calendar day
@@ -115,15 +129,34 @@ A period whose boundaries an external provider defines and whose result arrives 
 The device on which the payer authorized this specific Pix payment, as identified by the integrator.
 
 **Registered device**:
-A device registered under the Pix regulatory rules; it has no 90-day limit and is used only by rules outside the model.
+An access device registered in advance under the Pix regulatory rules; its registration status can be a model feature, while the limits that apply to unregistered devices are enforced outside the model. Registration is not usage.
 _Avoid_: Known device, trusted device
 
 **Device activity observation**:
 The settled Pix payments that one payer account initiated on one device within a contract-defined lookback window.
 
 **NewDevice**:
-Legacy name of the `transaction-features-v1` feature that marks the absence of settled Pix payments from a device in the last 90 days; it does not mean an unregistered device.
+Legacy name of the retired `transaction-features-v1` feature that marks the absence of settled Pix payments from a device in the last 90 days; it does not mean an unregistered device.
 _Avoid_: Unregistered device
+
+## Limits and registrations
+
+**Limit period**:
+The kind of value limit the payer's PSP applies to a Pix payment: the daytime or nighttime period when the recipient is a natural person, a daily limit, or no limit per period; the integrator determines it.
+
+**Period limit**:
+The value limit in effect for the payer account in the limit period that applies to a Pix payment; a known zero is a fact, not a missing value.
+_Avoid_: Transaction limit, cap
+
+**Limit consumption**:
+The amount already counted against the period limit in the current period, excluding the Pix payment being scored.
+
+**Projected limit utilization**:
+The limit consumption plus the amount of the Pix payment being scored, divided by the period limit; undefined when the limit is zero.
+
+**Pre-registered recipient**:
+A recipient covered by a registration the payer made for specific limits, in effect at decision time and applicable to the recipient account of this payment; it is context, not a guarantee of legitimacy.
+_Avoid_: Trusted recipient, whitelisted recipient
 
 ## Scoring
 
@@ -132,7 +165,17 @@ The model's estimate, between 0 and 1, of how likely a payment is to be fraudule
 _Avoid_: Decision, verdict
 
 **Feature schema**:
-The versioned definition of the ordered numeric features a model consumes, including their meaning and scaling.
+The versioned definition of the ordered numeric features a model consumes, including their meaning, scaling, availability rules, and the layout of the preparation state.
+
+**Feature preparation**:
+The conversion of a valid scoring input into the features of a feature schema, shared by training, evaluation, and scoring.
+_Avoid_: Feature extraction, conversion
+
+**Preparation state**:
+The values fitted on the train partition, such as standardization means and scales, that feature preparation applies to every input of one model.
+
+**Preparation note**:
+A report that one optional source of a feature is not known, with its path and its status: missing, stale, not applicable, no history, zero limit, or unrecognized.
 
 **Regulatory rule**:
 A mandatory constraint from Pix regulation, such as a transaction limit, evaluated separately from scoring.
