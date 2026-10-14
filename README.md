@@ -233,6 +233,77 @@ output is replaced only with `-replace`. Any failure exits with code 1 and
 writes nothing. The SHA-256 values detect changed files; they are not
 signatures and do not show who produced a model.
 
+## Evaluating a saved model (`cmd/evaluate`)
+
+`evaluate` measures a model artifact on one scope of a
+`pix-training-example-v2` dataset and writes an evaluation report
+([`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md)):
+
+```bash
+mkdir -p evaluations
+go run ./cmd/evaluate \
+  -model models/pix-risk.json \
+  -dataset training/testdata/pix-risk-v1.jsonl \
+  -partition test \
+  -output evaluations/test.json
+```
+
+`-model`, `-dataset`, and `-output` are required, and the directory of
+`-output` must exist. Choose the records with exactly one scope:
+
+- `-partition validation` or `-partition test`, the partitions of the
+  boundaries stored in the model;
+- `-after TIME`, optionally with `-through TIME`, the decision times after
+  `-after` and through `-through`, as RFC 3339 timestamps with an offset.
+  `-after` must not be earlier than the model's `train_end`: the train
+  partition is never evaluated.
+
+`-threshold VALUE` measures at another threshold for this evaluation only;
+the report labels it as an override, and the model keeps its own.
+`-reference-dataset FILE` supplies the model's training dataset, verified by
+its SHA-256, to measure group overlap when you evaluate another dataset.
+An existing output is replaced only with `-replace`, and the output can
+never be the model or a dataset.
+
+`evaluate`:
+
+1. Decodes the model strictly and checks the scope and the threshold before
+   reading any dataset.
+2. Reads, validates, and classifies every record as `train` does. If any
+   record is invalid, it reports every problem and writes nothing.
+3. Prepares the usable records in scope with the model's own preparation
+   state and scores them with its network. Nothing is trained, refitted,
+   selected, or tuned, and the model file is never changed.
+4. Measures them at the threshold and writes the report through a temporary
+   file and a rename: the identities of the model and everything that
+   produced it, the dataset report, the scope, the records in and out of
+   it, their coverage, the group overlap with the train records, the
+   threshold and its source, the metrics, and their completeness.
+
+Evaluated on the validation and test partitions of its own training
+dataset, a model reproduces the metrics of its training report exactly.
+
+An evaluation is incomplete when its scope has no usable records, no fraud,
+no legitimate payments, or frauds with an unknown loss. The report then
+lists each reason with the metrics it affects. In the bundled 8-record
+dataset, the only usable test record is a fraud with an unknown loss, so
+the command above writes an incomplete report with `no_legitimate_examples`
+and `unknown_loss_frauds`. Standard output holds exactly one JSON object,
+followed by a newline:
+
+| Exit code | `status` | Meaning |
+|-----------|----------|---------|
+| 0 | `evaluated` | The report was written and is complete. The object holds `report_sha256`, `model_sha256`, `dataset_sha256`, and an empty `incomplete` list. |
+| 3 | `incomplete` | The report was written, but `incomplete` lists the reasons some metrics do not measure anything. |
+| 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, and standard error repeats each problem. Nothing is written. |
+| 1 | none | Operational failure, such as a missing flag, an invalid model, scope, or threshold, a reference dataset that is not the training dataset, an existing output, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+
+A complete evaluation is not a quality pass. Software also cannot stop
+anyone from evaluating the test partition, or any held-out data, again and
+again: if you change a model after seeing its results there, that data has
+become validation data, and the changed model needs new held-out data
+([ADR 0017](docs/adr/0017-saved-models-are-evaluated-read-only-on-an-explicit-scope.md)).
+
 ### Limitations
 
 Successful training is not production validation. The command shows that
@@ -268,5 +339,5 @@ replace the version 1 contracts, and the feature schema
 Pix key, payer device, or limit per period, marking unavailable information
 with explicit indicators instead of refusing to score. The `pixrisk`
 package prepares its 62 features and fits their standardization on the
-train partition only. `cmd/train` uses version 2; `cmd/predict` still uses
-version 1 until it migrates.
+train partition only. `cmd/train` and `cmd/evaluate` use version 2;
+`cmd/predict` still uses version 1 until it migrates.

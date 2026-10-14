@@ -226,6 +226,28 @@ The score at or above which a Pix payment is predicted fraudulent, fixed before 
 **Dataset fingerprint**:
 The SHA-256 digest of the exact bytes of a training dataset.
 
+## Evaluation
+
+**Independent evaluation**:
+Measuring a saved model artifact on a dataset without training, refitting, selecting, or tuning anything, and without changing the model.
+_Avoid_: Validation, testing (when the protocol roles are not meant)
+
+**Evaluation scope**:
+The records an independent evaluation measures, chosen by decision time: the validation or test partition of the model's boundaries, or a window that starts at or after the model's train_end.
+
+**Held-out data**:
+Records that were not used to fit, select, or tune a model: the test partition, or records decided after the model's validation_end. Changing a model after looking at its results on held-out data turns them into validation data.
+
+**Threshold override**:
+A decision threshold given for one evaluation instead of the model's own; the evaluation report labels it, and the model keeps its threshold.
+
+**Reference dataset**:
+The training dataset of a model, supplied to measure group overlap when another dataset is evaluated; its dataset fingerprint must be the one the model records.
+
+**Incomplete evaluation**:
+An evaluation whose scope cannot support some metrics, because it has no usable examples, no fraud, no legitimate payments, or frauds with an unknown loss; it is reported, never treated as a quality pass.
+_Avoid_: Failed evaluation
+
 ## Versions
 
 **Contract version**:
