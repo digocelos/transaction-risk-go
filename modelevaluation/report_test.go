@@ -67,7 +67,7 @@ func TestMarshalWritesTheReportLayout(t *testing.T) {
 
 	saoPaulo := time.FixedZone("-03:00", -3*60*60)
 	after := time.Date(2026, 6, 5, 21, 0, 0, 0, saoPaulo)
-	report := evaluate(t, model, dataset, Options{Scope: WindowScope(after, nil)})
+	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: WindowScope(after, nil)})
 	data := marshal(t, report)
 
 	if again := marshal(t, report); !bytes.Equal(data, again) {
@@ -143,7 +143,7 @@ func TestMarshalWritesUndefinedValuesAsNull(t *testing.T) {
 	original := read(t, fixture)
 	model, _ := trainModel(t, original, baselineConfig(t))
 
-	report := evaluate(t, model, overlapping(t, original), Options{Scope: WindowScope(utc(6, 5), at(6, 12))})
+	report := evaluate(t, model, overlapping(t, original), Options{MaxRecords: maxRecords, Scope: WindowScope(utc(6, 5), at(6, 12))})
 	data := marshal(t, report)
 
 	var decoded struct {
@@ -167,7 +167,7 @@ func TestMarshalWritesUndefinedValuesAsNull(t *testing.T) {
 
 	selection := read(t, selectionFixture)
 	selectionModel, _ := trainModel(t, selection, selectionConfig(t))
-	complete := marshal(t, evaluate(t, selectionModel, selection, Options{Scope: PartitionScope(evaluation.Validation)}))
+	complete := marshal(t, evaluate(t, selectionModel, selection, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Validation)}))
 	if !bytes.Contains(complete, []byte("\"completeness\": {\n    \"complete\": true,\n    \"incomplete\": []\n  }")) {
 		t.Errorf("complete evaluation:\n%s", complete)
 	}
@@ -178,7 +178,7 @@ func TestMarshalRejectsInconsistentReports(t *testing.T) {
 	dataset := read(t, selectionFixture)
 	model, _ := trainModel(t, dataset, selectionConfig(t))
 
-	valid := evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Test)})
+	valid := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)})
 
 	cases := map[string]func(*Report){
 		"unknown threshold source": func(r *Report) { r.Threshold.Source = "tuned" },
@@ -206,7 +206,7 @@ func TestMarshalRejectsInconsistentReports(t *testing.T) {
 
 	for name, change := range cases {
 		t.Run(name, func(t *testing.T) {
-			report := evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Test)})
+			report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)})
 			change(&report)
 
 			if _, err := Marshal(report); err == nil || !strings.Contains(err.Error(), "invalid evaluation report") {

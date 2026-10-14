@@ -17,7 +17,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/digocelos/transaction-risk-go/modelartifact"
 	"github.com/digocelos/transaction-risk-go/pixinput"
@@ -92,11 +91,12 @@ func New(data []byte) (*Scorer, error) {
 	}, nil
 }
 
-// Load reads an artifact file once and loads it with New.
+// Load reads an artifact file once, refusing one above
+// modelartifact.MaxArtifactSize, and loads it with New.
 func Load(path string) (*Scorer, error) {
-	data, err := os.ReadFile(path)
+	data, err := modelartifact.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read model artifact: %w", err)
+		return nil, err
 	}
 
 	return New(data)

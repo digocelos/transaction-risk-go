@@ -41,12 +41,13 @@ const cancellationInterval = 1024
 // PrepareDataset reads and classifies every record of a dataset with
 // pix-risk-v1, partitions it by decision time, fits the preparation state
 // on the usable train records only, and applies that frozen state to every
-// partition. The boundaries are validated before the dataset is read, and
-// ctx is checked every 1,024 records. A dataset with invalid records yields
+// partition. The boundaries are validated before the dataset is read, at
+// most maxRecords records are read, as trainingdata.Scan does, and ctx is
+// checked every 1,024 records. A dataset with invalid records yields
 // an *InvalidDatasetError, a train partition without both labels an
 // *UntrainableError, and a standardized feature that no usable train
 // record has a *pixrisk.FeatureNeverKnownError.
-func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluation.Boundaries) (PreparedDataset, error) {
+func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluation.Boundaries, maxRecords int) (PreparedDataset, error) {
 	partitioner, err := evaluation.NewPartitioner(boundaries)
 	if err != nil {
 		return PreparedDataset{}, err
@@ -56,7 +57,7 @@ func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluatio
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err

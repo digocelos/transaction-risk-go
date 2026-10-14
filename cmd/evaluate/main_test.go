@@ -77,7 +77,7 @@ func writeModel(t *testing.T, dir string) string {
 	cfg.TrainEnd = time.Date(2026, 5, 31, 0, 0, 0, 0, time.UTC)
 	cfg.ValidationEnd = time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
 
-	result, err := training.Run(context.Background(), bytes.NewReader(read(t, selectionFixture)), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(read(t, selectionFixture)), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,5 +533,30 @@ func TestEvaluateHelp(t *testing.T) {
 	r := evaluate(t, "-h")
 	if r.code != exitEvaluated || r.stdout != "" || !strings.Contains(r.stderr, "usage: evaluate") {
 		t.Errorf("exit code = %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+	}
+}
+
+// -max-records limits the records read from each dataset.
+func TestEvaluateEnforcesTheRecordLimit(t *testing.T) {
+	for name, value := range map[string]string{"above": "12", "invalid": "0"} {
+		t.Run(name, func(t *testing.T) {
+			dir, f := setup(t)
+			f["max-records"] = value
+
+			r := evaluate(t, args(f)...)
+			if r.code != exitFailure || r.stdout != "" ||
+				!(strings.Contains(r.stderr, "more than 12 records") || strings.Contains(r.stderr, "at least 1")) {
+				t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+			}
+			if got := entries(t, dir); !reflect.DeepEqual(got, []string{"model.json"}) {
+				t.Errorf("directory holds %v, want no report", got)
+			}
+		})
+	}
+
+	_, f := setup(t)
+	f["max-records"] = "13"
+	if r := evaluate(t, args(f)...); r.code != exitEvaluated {
+		t.Errorf("at the limit: exit code %d, stderr:\n%s", r.code, r.stderr)
 	}
 }

@@ -30,7 +30,7 @@ var pixRiskBoundaries = evaluation.Boundaries{
 func prepareDataset(t *testing.T, data []byte) PreparedDataset {
 	t.Helper()
 
-	dataset, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries)
+	dataset, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries, DefaultLimits.MaxRecords)
 	if err != nil {
 		t.Fatalf("PrepareDataset() error = %v", err)
 	}
@@ -137,7 +137,7 @@ func TestPrepareDatasetMatchesScoringPreparation(t *testing.T) {
 }
 
 func TestPrepareDatasetStopsOnInvalidRecords(t *testing.T) {
-	_, err := PrepareDataset(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")), pixRiskBoundaries)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var invalid *InvalidDatasetError
 	if !errors.As(err, &invalid) {
@@ -162,7 +162,7 @@ func TestPrepareDatasetStopsWhenAFeatureIsNeverKnownInTrain(t *testing.T) {
 	data := append(append(legitimate, fraud...),
 		read(t, examples+"03-fraud-registered-device-pre-registered-recipient.jsonl")...)
 
-	_, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(data), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var never *pixrisk.FeatureNeverKnownError
 	if !errors.As(err, &never) {
@@ -177,7 +177,7 @@ func TestPrepareDatasetStopsWhenAFeatureIsNeverKnownInTrain(t *testing.T) {
 func TestPrepareDatasetValidatesBoundariesBeforeReading(t *testing.T) {
 	reversed := evaluation.Boundaries{TrainEnd: pixRiskBoundaries.ValidationEnd, ValidationEnd: pixRiskBoundaries.TrainEnd}
 
-	if _, err := PrepareDataset(context.Background(), failingReader{t}, reversed); err == nil {
+	if _, err := PrepareDataset(context.Background(), failingReader{t}, reversed, DefaultLimits.MaxRecords); err == nil {
 		t.Error("PrepareDataset() error = nil, want an error")
 	}
 }
@@ -185,7 +185,7 @@ func TestPrepareDatasetValidatesBoundariesBeforeReading(t *testing.T) {
 // Records of another training example version are invalid.
 func TestPrepareDatasetRejectsVersion1Records(t *testing.T) {
 	v1 := read(t, "../docs/contracts/training-examples/dataset.jsonl")
-	_, err := PrepareDataset(context.Background(), bytes.NewReader(v1), pixRiskBoundaries)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(v1), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var invalid *InvalidDatasetError
 	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 7 {

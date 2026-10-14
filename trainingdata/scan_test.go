@@ -45,7 +45,7 @@ func scanAll(t *testing.T, r io.Reader) ([]Record, Summary) {
 
 	var records []Record
 
-	summary, err := Scan(r, TransactionFeaturesV1, func(record Record) error {
+	summary, err := Scan(r, TransactionFeaturesV1, DefaultMaxRecords, func(record Record) error {
 		records = append(records, record)
 		return nil
 	})
@@ -353,7 +353,7 @@ func TestScanUsesBoundedMemory(t *testing.T) {
 	baseline := heapInUse()
 	var peak uint64
 
-	summary, err := Scan(&repeatReader{line: line, count: records}, TransactionFeaturesV1, func(record Record) error {
+	summary, err := Scan(&repeatReader{line: line, count: records}, TransactionFeaturesV1, DefaultMaxRecords, func(record Record) error {
 		if record.Line%5000 == 0 {
 			peak = max(peak, heapInUse())
 		}
@@ -399,7 +399,7 @@ func TestScanStopsOnErrors(t *testing.T) {
 	base := baseRecord(t)
 
 	visits := 0
-	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), TransactionFeaturesV1, func(Record) error {
+	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), TransactionFeaturesV1, DefaultMaxRecords, func(Record) error {
 		visits++
 		return errVisit
 	})
@@ -409,8 +409,44 @@ func TestScanStopsOnErrors(t *testing.T) {
 
 	errDisk := errors.New("disk failure")
 	_, err = Scan(io.MultiReader(strings.NewReader(base+"\n"), iotest.ErrReader(errDisk)),
-		TransactionFeaturesV1, func(Record) error { return nil })
+		TransactionFeaturesV1, DefaultMaxRecords, func(Record) error { return nil })
 	if !errors.Is(err, errDisk) {
 		t.Errorf("reader error: err = %v, want it to wrap %v", err, errDisk)
+	}
+}
+
+// Scan reads at most the configured number of records: the next line
+// fails with a *RecordLimitError before it is decoded or visited, however
+// long the stream is.
+func TestScanStopsAtTheRecordLimit(t *testing.T) {
+	line := []byte(baseRecord(t) + "\n")
+
+	visits := 0
+	summary, err := Scan(&repeatReader{line: line, count: 1 << 30}, TransactionFeaturesV1, 25, func(Record) error {
+		visits++
+		return nil
+	})
+
+	var limit *RecordLimitError
+	if !errors.As(err, &limit) || limit.Limit != 25 {
+		t.Fatalf("Scan() error = %v, want a *RecordLimitError with limit 25", err)
+	}
+	if visits != 25 || summary.Records.Total != 25 {
+		t.Errorf("visited %d records and counted %d, want 25", visits, summary.Records.Total)
+	}
+	if !strings.Contains(err.Error(), "more than 25 records") {
+		t.Errorf("message = %q", err)
+	}
+
+	// A dataset with exactly the limit is read completely.
+	summary, err = Scan(&repeatReader{line: line, count: 25}, TransactionFeaturesV1, 25, func(Record) error { return nil })
+	if err != nil || summary.Records.Total != 25 || summary.DatasetSHA256 == "" {
+		t.Errorf("at the limit: summary %+v, error %v", summary.Records, err)
+	}
+
+	for _, invalid := range []int{0, -1} {
+		if _, err := Scan(strings.NewReader(""), TransactionFeaturesV1, invalid, func(Record) error { return nil }); err == nil {
+			t.Errorf("limit %d: Scan() error = nil", invalid)
+		}
 	}
 }

@@ -54,11 +54,14 @@ func WindowScope(after time.Time, through *time.Time) Scope {
 // artifact's threshold for this evaluation only, and the report labels it.
 // Reference, when not nil, is the dataset the model was trained on; its
 // SHA-256 must be the artifact's dataset_sha256, and its train partition
-// is used to measure group overlap.
+// is used to measure group overlap. MaxRecords limits the records read from
+// each dataset, as trainingdata.Scan does; trainingdata.DefaultMaxRecords
+// is the supported envelope.
 type Options struct {
-	Scope     Scope
-	Threshold *float64
-	Reference io.Reader
+	Scope      Scope
+	Threshold  *float64
+	Reference  io.Reader
+	MaxRecords int
 }
 
 // cancellationInterval is the number of records read between two checks of
@@ -99,13 +102,13 @@ func Evaluate(ctx context.Context, model []byte, dataset io.Reader, options Opti
 
 	var reference map[string]bool
 	if options.Reference != nil {
-		reference, err = referenceKeys(ctx, options.Reference, artifact.Training)
+		reference, err = referenceKeys(ctx, options.Reference, artifact.Training, options.MaxRecords)
 		if err != nil {
 			return Report{}, err
 		}
 	}
 
-	scanned, err := scan(ctx, dataset, artifact, scope)
+	scanned, err := scan(ctx, dataset, artifact, scope, options.MaxRecords)
 	if err != nil {
 		return Report{}, err
 	}
@@ -147,12 +150,12 @@ type scanned struct {
 }
 
 // scan reads, classifies, and scores the evaluated dataset.
-func scan(ctx context.Context, dataset io.Reader, artifact modelartifact.Artifact, scope window) (scanned, error) {
+func scan(ctx context.Context, dataset io.Reader, artifact modelartifact.Artifact, scope window, maxRecords int) (scanned, error) {
 	result := scanned{trainKeys: map[string]bool{}, scopeKeys: map[string]int{}}
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -273,10 +276,10 @@ func trainKey(record trainingdata.Record, trainEnd time.Time) (string, bool) {
 
 // referenceKeys reads a reference dataset, checks that it is the model's
 // training dataset, and returns the group keys of its usable train records.
-func referenceKeys(ctx context.Context, reference io.Reader, trained modelartifact.Training) (map[string]bool, error) {
+func referenceKeys(ctx context.Context, reference io.Reader, trained modelartifact.Training, maxRecords int) (map[string]bool, error) {
 	keys := map[string]bool{}
 
-	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV1, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err

@@ -67,7 +67,7 @@ func writeModel(t *testing.T) string {
 	}
 	cfg.MaxEpochs = 300
 
-	trained, err := training.Run(context.Background(), bytes.NewReader(read(t, fixture)), cfg, nil)
+	trained, err := training.Run(context.Background(), bytes.NewReader(read(t, fixture)), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

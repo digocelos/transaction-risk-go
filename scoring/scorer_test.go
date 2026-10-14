@@ -58,7 +58,7 @@ func trainArtifact(t testing.TB) ([]byte, training.Result) {
 	}
 	cfg.MaxEpochs = 300
 
-	result, err := training.Run(context.Background(), bytes.NewReader(read(t, fixture)), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(read(t, fixture)), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +218,7 @@ func TestScoreMatchesTheTrainingPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	dataset := read(t, fixture)
-	prepared, err := training.PrepareDataset(context.Background(), bytes.NewReader(dataset), cfg.Boundaries())
+	prepared, err := training.PrepareDataset(context.Background(), bytes.NewReader(dataset), cfg.Boundaries(), training.DefaultLimits.MaxRecords)
 	if err != nil {
 		t.Fatal(err)
 	}

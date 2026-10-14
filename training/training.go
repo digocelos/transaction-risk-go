@@ -69,23 +69,29 @@ func (e *ValidationRequirementError) Error() string {
 		e.Validation.Fraud, e.Validation.Legitimate, e.Requirement)
 }
 
-// Run validates the configuration, prepares the dataset with pix-risk-v1,
-// and checks that the validation partition supports the configured
-// selection before training. It trains the configured network on the
+// Run validates the configuration and the limits, prepares the dataset
+// with pix-risk-v1, reading at most limits.MaxRecords records, and checks
+// that the validation partition supports the configured selection and
+// that the training work is within limits.MaxTrainingWork, returning a
+// *WorkLimitError otherwise, before training. It trains the configured network on the
 // usable train records in line order, keeps the configured checkpoint,
 // chooses the threshold, measures the validation partition, and, when
 // configured, evaluates the test partition once with everything frozen.
 // The test partition never influences any choice. progress, when not nil,
 // receives the training loss of each epoch, measured before that epoch's
-// update. ctx is checked every 1,024 records while reading and before every
-// epoch; a canceled run returns ctx's error and no result. An infeasible
+// update. ctx is checked every 1,024 records while reading, before every
+// epoch, every 1,024 samples within an epoch, and every 1,024 records while
+// scoring a partition; a canceled run returns ctx's error and no result. An infeasible
 // threshold policy returns an *evaluation.InfeasibleThresholdError.
-func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, progress func(epoch int, loss float64)) (Result, error) {
+func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, limits Limits, progress func(epoch int, loss float64)) (Result, error) {
 	if err := config.Validate(); err != nil {
 		return Result{}, fmt.Errorf("invalid training configuration: %w", err)
 	}
+	if err := limits.Validate(); err != nil {
+		return Result{}, fmt.Errorf("invalid limits: %w", err)
+	}
 
-	prepared, err := PrepareDataset(ctx, dataset, config.Boundaries())
+	prepared, err := PrepareDataset(ctx, dataset, config.Boundaries(), limits.MaxRecords)
 	if err != nil {
 		return Result{}, err
 	}
@@ -94,19 +100,23 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, p
 		return Result{}, err
 	}
 
+	if err := checkWork(prepared, config, limits.MaxTrainingWork); err != nil {
+		return Result{}, err
+	}
+
 	network, selection, err := train(ctx, prepared, config, progress)
 	if err != nil {
 		return Result{}, err
 	}
 
-	selection.Threshold, err = chooseThreshold(network, prepared.Validation, config.Threshold)
+	selection.Threshold, err = chooseThreshold(ctx, network, prepared.Validation, config.Threshold)
 	if err != nil {
 		return Result{}, err
 	}
 
 	threshold := selection.Threshold.Value
 
-	validation, err := evaluate(network, prepared.Validation, threshold)
+	validation, err := evaluate(ctx, network, prepared.Validation, threshold)
 	if err != nil {
 		return Result{}, fmt.Errorf("evaluate validation partition: %w", err)
 	}
@@ -122,7 +132,7 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, p
 	}
 
 	if config.TestEvaluation == trainingconfig.TestAfterSelection {
-		test, err := evaluate(network, prepared.Test, threshold)
+		test, err := evaluate(ctx, network, prepared.Test, threshold)
 		if err != nil {
 			return Result{}, fmt.Errorf("evaluate test partition: %w", err)
 		}
@@ -202,7 +212,7 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 			return nil, selection, err
 		}
 
-		loss, err := network.TrainBatch(samples, config.LearningRate)
+		loss, err := network.TrainBatchContext(ctx, samples, config.LearningRate)
 		if err != nil {
 			return nil, selection, fmt.Errorf("train epoch %d: %w", epoch-1, err)
 		}
@@ -217,7 +227,7 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 			continue
 		}
 
-		value, err := objective(network, prepared.Validation, checkpoint.Objective)
+		value, err := objective(ctx, network, prepared.Validation, checkpoint.Objective)
 		if err != nil {
 			return nil, selection, fmt.Errorf("evaluate the validation objective at epoch %d: %w", epoch, err)
 		}
@@ -267,8 +277,8 @@ func improves(value, best float64, checkpoint trainingconfig.Checkpoint) bool {
 
 // objective measures the validation objective: the mean squared error, or
 // the average precision.
-func objective(network *nn.Network, examples []PreparedExample, name string) (float64, error) {
-	predictions, err := predict(network, examples)
+func objective(ctx context.Context, network *nn.Network, examples []PreparedExample, name string) (float64, error) {
+	predictions, err := predict(ctx, network, examples)
 	if err != nil {
 		return 0, err
 	}
@@ -294,7 +304,7 @@ func objective(network *nn.Network, examples []PreparedExample, name string) (fl
 
 // chooseThreshold returns the configured threshold, or selects one from
 // the validation predictions of the frozen network.
-func chooseThreshold(network *nn.Network, validation []PreparedExample, policy trainingconfig.Threshold) (trainingreport.ThresholdChoice, error) {
+func chooseThreshold(ctx context.Context, network *nn.Network, validation []PreparedExample, policy trainingconfig.Threshold) (trainingreport.ThresholdChoice, error) {
 	choice := trainingreport.ThresholdChoice{Policy: policy.Policy}
 
 	if policy.Policy == trainingconfig.ThresholdFixed {
@@ -302,7 +312,7 @@ func chooseThreshold(network *nn.Network, validation []PreparedExample, policy t
 		return choice, nil
 	}
 
-	predictions, err := predict(network, validation)
+	predictions, err := predict(ctx, network, validation)
 	if err != nil {
 		return choice, err
 	}
@@ -320,11 +330,18 @@ func chooseThreshold(network *nn.Network, validation []PreparedExample, policy t
 	return choice, nil
 }
 
-// predict scores the examples of one partition.
-func predict(network *nn.Network, examples []PreparedExample) ([]evaluation.Prediction, error) {
+// predict scores the examples of one partition, checking ctx every 1,024
+// examples.
+func predict(ctx context.Context, network *nn.Network, examples []PreparedExample) ([]evaluation.Prediction, error) {
 	predictions := make([]evaluation.Prediction, len(examples))
 
 	for i, example := range examples {
+		if i%cancellationInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+		}
+
 		outputs, err := network.Predict(example.Values)
 		if err != nil {
 			return nil, err
@@ -342,8 +359,8 @@ func predict(network *nn.Network, examples []PreparedExample) ([]evaluation.Pred
 }
 
 // evaluate scores the examples of one partition and measures them.
-func evaluate(network *nn.Network, examples []PreparedExample, threshold float64) (evaluation.Metrics, error) {
-	predictions, err := predict(network, examples)
+func evaluate(ctx context.Context, network *nn.Network, examples []PreparedExample, threshold float64) (evaluation.Metrics, error) {
+	predictions, err := predict(ctx, network, examples)
 	if err != nil {
 		return evaluation.Metrics{}, err
 	}

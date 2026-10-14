@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"reflect"
 	"runtime/debug"
@@ -34,6 +35,11 @@ const Version = "pix-risk-model-v1"
 
 // Unknown marks software information the build does not carry.
 const Unknown = "unknown"
+
+// MaxArtifactSize is the largest artifact, in bytes. The largest
+// architecture the training configuration accepts encodes to less than half
+// of it.
+const MaxArtifactSize = 16 << 20
 
 // Software identifies the toolkit build that trained a model.
 type Software struct {
@@ -297,21 +303,45 @@ func Marshal(artifact Artifact) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
+// ReadFile reads an artifact file, refusing one above MaxArtifactSize
+// without reading past the limit.
+func ReadFile(path string) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("read model artifact: %w", err)
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, MaxArtifactSize+1))
+	switch {
+	case err != nil:
+		return nil, fmt.Errorf("read model artifact: %w", err)
+	case len(data) > MaxArtifactSize:
+		return nil, fmt.Errorf("read model artifact: %s exceeds %d bytes", path, MaxArtifactSize)
+	}
+	return data, nil
+}
+
 // Load reads and decodes an artifact file.
 func Load(path string) (Artifact, error) {
-	data, err := os.ReadFile(path)
+	data, err := ReadFile(path)
 	if err != nil {
-		return Artifact{}, fmt.Errorf("read model artifact: %w", err)
+		return Artifact{}, err
 	}
 
 	return Decode(data)
 }
 
-// Decode decodes an artifact strictly: valid UTF-8, no duplicate or
-// unknown members, no trailing data, the supported versions, the exact
-// pix-risk-v1 descriptor, a valid preparation state, parameters that match
-// the architecture and are finite, and self-hashes that match the content.
+// Decode decodes an artifact strictly: at most MaxArtifactSize bytes, valid
+// UTF-8, no duplicate or unknown members, no trailing data, the supported
+// versions, the exact pix-risk-v1 descriptor, a valid preparation state,
+// parameters that match the architecture and are finite, and self-hashes
+// that match the content.
 func Decode(data []byte) (Artifact, error) {
+	if len(data) > MaxArtifactSize {
+		return Artifact{}, fmt.Errorf("decode model artifact: the artifact exceeds %d bytes", MaxArtifactSize)
+	}
+
 	var value stored
 	if err := decodeStrict(data, &value); err != nil {
 		return Artifact{}, fmt.Errorf("decode model artifact: %w", err)

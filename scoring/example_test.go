@@ -92,7 +92,7 @@ func generateArtifact(path string) error {
 		return err
 	}
 
-	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		return err
 	}

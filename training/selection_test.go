@@ -42,7 +42,7 @@ func bestValidation(objective string, interval int) trainingconfig.Checkpoint {
 func runSelection(t *testing.T, data []byte, cfg trainingconfig.Config) Result {
 	t.Helper()
 
-	result, err := Run(context.Background(), bytes.NewReader(data), cfg, nil)
+	result, err := Run(context.Background(), bytes.NewReader(data), cfg, DefaultLimits, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -78,7 +78,7 @@ func predictions(t *testing.T, result Result, examples []PreparedExample) []eval
 func preparedSelection(t *testing.T, data []byte) PreparedDataset {
 	t.Helper()
 
-	dataset, err := PrepareDataset(context.Background(), bytes.NewReader(data), selectionConfig().Boundaries())
+	dataset, err := PrepareDataset(context.Background(), bytes.NewReader(data), selectionConfig().Boundaries(), DefaultLimits.MaxRecords)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +178,7 @@ func TestRunReportsAnInfeasibleThresholdPolicy(t *testing.T) {
 	cfg := selectionConfig()
 	cfg.Threshold = trainingconfig.Threshold{Policy: trainingconfig.ThresholdMaxRecallAtMaxFalsePositiveRate, MaxFalsePositiveRate: 0}
 
-	_, err := Run(context.Background(), bytes.NewReader(data), cfg, nil)
+	_, err := Run(context.Background(), bytes.NewReader(data), cfg, DefaultLimits, nil)
 
 	var infeasible *evaluation.InfeasibleThresholdError
 	if !errors.As(err, &infeasible) {
@@ -218,7 +218,7 @@ func TestRunRequiresWhatValidationSelectionNeeds(t *testing.T) {
 		cfg := selectionConfig()
 		test.change(&cfg)
 
-		_, err := Run(context.Background(), bytes.NewReader(test.data), cfg, func(int, float64) {
+		_, err := Run(context.Background(), bytes.NewReader(test.data), cfg, DefaultLimits, func(int, float64) {
 			t.Fatalf("%s: training started before the validation requirement was checked", name)
 		})
 

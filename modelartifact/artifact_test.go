@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime/debug"
 	"strings"
@@ -46,7 +47,7 @@ func trained(t *testing.T) (training.Result, []byte) {
 		t.Fatal(err)
 	}
 
-	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -386,5 +387,79 @@ func TestMarshalWritesBoundariesInUTC(t *testing.T) {
 
 	if !bytes.Equal(encoded[0], encoded[1]) || !strings.Contains(string(encoded[1]), `"train_end": "2026-06-05T00:00:00Z"`) {
 		t.Error("boundary offsets changed the artifact or were not written in UTC")
+	}
+}
+
+// The largest architecture the configuration accepts fits well within the
+// artifact size limit.
+func TestTheLargestArtifactFitsTheSizeLimit(t *testing.T) {
+	data, err := os.ReadFile(baseline)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := trainingconfig.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxEpochs = 1
+	cfg.HiddenLayers = []int{256, 256, 256, 256}
+
+	dataset, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := trainingreport.Marshal(result.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := FromTraining(result.Network, result.State, result.Report, sha256Hex(report), software)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Logf("the largest artifact has %d bytes; the limit is %d", len(encoded), MaxArtifactSize)
+	if len(encoded) > MaxArtifactSize/2 {
+		t.Errorf("the largest artifact has %d bytes, more than half the %d-byte limit", len(encoded), MaxArtifactSize)
+	}
+	if _, err := Decode(encoded); err != nil {
+		t.Errorf("Decode() error = %v", err)
+	}
+}
+
+// An artifact above the size limit is refused, even when it is valid JSON,
+// and ReadFile stops reading after the limit.
+func TestArtifactsAboveTheSizeLimitAreRefused(t *testing.T) {
+	_, _, data := artifact(t)
+	padded := append(bytes.Clone(data), bytes.Repeat([]byte(" "), MaxArtifactSize)...)
+
+	if _, err := Decode(padded); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("Decode() error = %v, want the size limit", err)
+	}
+
+	path := filepath.Join(t.TempDir(), "model.json")
+	if err := os.WriteFile(path, padded, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if read, err := ReadFile(path); err == nil || read != nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("ReadFile() = %d bytes, %v; want the size limit", len(read), err)
+	}
+	if _, err := Load(path); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Errorf("Load() error = %v, want the size limit", err)
+	}
+
+	exact := filepath.Join(t.TempDir(), "exact.json")
+	if err := os.WriteFile(exact, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if read, err := ReadFile(exact); err != nil || !bytes.Equal(read, data) {
+		t.Errorf("ReadFile() of a valid artifact: %v", err)
 	}
 }

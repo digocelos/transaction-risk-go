@@ -18,6 +18,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/modelartifact"
 	"github.com/digocelos/transaction-risk-go/training"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
+	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
@@ -37,9 +38,12 @@ const (
 	baseline = "../docs/contracts/training-config-examples/01-baseline.json"
 )
 
+// maxRecords is the record limit of the evaluations under test.
+const maxRecords = trainingdata.DefaultMaxRecords
+
 var software = modelartifact.Software{Module: "github.com/digocelos/transaction-risk-go", Version: "(devel)", Revision: "0123abc"}
 
-func read(t *testing.T, path string) []byte {
+func read(t testing.TB, path string) []byte {
 	t.Helper()
 
 	data, err := os.ReadFile(path)
@@ -49,7 +53,7 @@ func read(t *testing.T, path string) []byte {
 	return data
 }
 
-func baselineConfig(t *testing.T) trainingconfig.Config {
+func baselineConfig(t testing.TB) trainingconfig.Config {
 	t.Helper()
 
 	cfg, err := trainingconfig.Decode(read(t, baseline))
@@ -62,7 +66,7 @@ func baselineConfig(t *testing.T) trainingconfig.Config {
 
 // selectionConfig restores the best validation loss and selects the
 // threshold on validation.
-func selectionConfig(t *testing.T) trainingconfig.Config {
+func selectionConfig(t testing.TB) trainingconfig.Config {
 	t.Helper()
 
 	cfg := baselineConfig(t)
@@ -82,10 +86,10 @@ func selectionConfig(t *testing.T) trainingconfig.Config {
 
 // trainModel trains a model on a dataset and returns the bytes of its
 // artifact and the training result.
-func trainModel(t *testing.T, dataset []byte, cfg trainingconfig.Config) ([]byte, training.Result) {
+func trainModel(t testing.TB, dataset []byte, cfg trainingconfig.Config) ([]byte, training.Result) {
 	t.Helper()
 
-	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +133,7 @@ func TestEvaluateReproducesTheFinalEvaluation(t *testing.T) {
 	cases := []struct {
 		name    string
 		fixture string
-		config  func(*testing.T) trainingconfig.Config
+		config  func(testing.TB) trainingconfig.Config
 	}{
 		{"fixed threshold", fixture, baselineConfig},
 		{"selected checkpoint and threshold", selectionFixture, selectionConfig},
@@ -149,7 +153,7 @@ func TestEvaluateReproducesTheFinalEvaluation(t *testing.T) {
 			}
 
 			for _, p := range partitions {
-				report := evaluate(t, model, dataset, Options{Scope: PartitionScope(p.partition)})
+				report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(p.partition)})
 
 				if !reflect.DeepEqual(report.Metrics, p.want) {
 					t.Errorf("%s metrics = %+v, want the training report's %+v", p.partition, report.Metrics, p.want)
@@ -220,7 +224,7 @@ func TestEvaluateMeasuresTheRecordsInScope(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			report := evaluate(t, model, dataset, Options{Scope: c.scope})
+			report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: c.scope})
 
 			if !reflect.DeepEqual(report.Scope, c.wantScope) {
 				t.Errorf("Scope = %+v, want %+v", report.Scope, c.wantScope)
@@ -250,7 +254,7 @@ func TestEvaluateWindowBoundsAreExclusiveThenInclusive(t *testing.T) {
 	line8 := time.Date(2026, 6, 5, 14, 3, 7, 120_000_000, saoPaulo)   // fraud
 	line10 := time.Date(2026, 6, 10, 14, 3, 7, 120_000_000, saoPaulo) // fraud
 
-	report := evaluate(t, model, dataset, Options{Scope: WindowScope(line8, &line10)})
+	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: WindowScope(line8, &line10)})
 
 	// Line 9, a legitimate record, and line 10 are in scope; line 8 is not.
 	if want := (evaluation.PartitionCounts{Fraud: 1, Legitimate: 1}); report.Records.InScope != want {
@@ -281,7 +285,7 @@ func TestEvaluateRejectsInvalidScopes(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{Scope: c.scope})
+			_, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{MaxRecords: maxRecords, Scope: c.scope})
 			if err == nil || !strings.Contains(err.Error(), c.want) {
 				t.Fatalf("Evaluate() error = %v, want %q", err, c.want)
 			}
@@ -357,7 +361,7 @@ func TestEvaluateMarksIncompleteEvaluations(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			report := evaluate(t, model, c.dataset, Options{Scope: c.scope, Threshold: c.threshold})
+			report := evaluate(t, model, c.dataset, Options{MaxRecords: maxRecords, Scope: c.scope, Threshold: c.threshold})
 
 			if report.Records.InScope != c.wantInScope {
 				t.Errorf("Records.InScope = %+v, want %+v", report.Records.InScope, c.wantInScope)
@@ -410,7 +414,7 @@ func TestIncompleteReasonsNameTheirMetrics(t *testing.T) {
 
 	seen := map[string]bool{}
 	for _, scope := range scopes {
-		report := evaluate(t, model, dataset, Options{Scope: scope})
+		report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: scope})
 		for _, incomplete := range report.Completeness.Incomplete {
 			seen[incomplete.Reason] = true
 			if !reflect.DeepEqual(incomplete.Metrics, want[incomplete.Reason]) {
@@ -437,7 +441,7 @@ func TestEvaluateLabelsAThresholdOverride(t *testing.T) {
 	selected := result.Report.Selection.Threshold
 	stored := modelartifact.Threshold{Policy: selected.Policy, Value: selected.Value}
 
-	report := evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Validation)})
+	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Validation)})
 	if want := (Threshold{Source: ThresholdFromArtifact, Value: selected.Value}); report.Threshold != want {
 		t.Errorf("Threshold = %+v, want %+v", report.Threshold, want)
 	}
@@ -453,7 +457,7 @@ func TestEvaluateLabelsAThresholdOverride(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		report := evaluate(t, model, dataset, Options{
+		report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords,
 			Scope:     PartitionScope(evaluation.Validation),
 			Threshold: float(c.threshold),
 		})
@@ -473,7 +477,7 @@ func TestEvaluateLabelsAThresholdOverride(t *testing.T) {
 	}
 
 	for _, invalid := range []float64{-0.1, 1.1, math.NaN(), math.Inf(1)} {
-		_, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{
+		_, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{MaxRecords: maxRecords,
 			Scope:     PartitionScope(evaluation.Validation),
 			Threshold: float(invalid),
 		})
@@ -500,7 +504,7 @@ func TestEvaluateRecordsIdentities(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	report := evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Test)})
+	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)})
 
 	want := Model{
 		ArtifactVersion:       "pix-risk-model-v1",
@@ -534,7 +538,7 @@ func TestEvaluateRecordsIdentities(t *testing.T) {
 	}
 
 	other := excludedTestRecords(t, dataset)
-	report = evaluate(t, model, other, Options{Scope: PartitionScope(evaluation.Test)})
+	report = evaluate(t, model, other, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)})
 	if report.SameDatasetAsTraining || report.Dataset.DatasetSHA256 != digest(other) {
 		t.Errorf("another dataset: SameDatasetAsTraining = %v, DatasetSHA256 = %s",
 			report.SameDatasetAsTraining, report.Dataset.DatasetSHA256)
@@ -561,7 +565,7 @@ func TestEvaluateCountsTheCoverageOfTheScope(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		report := evaluate(t, model, dataset, Options{Scope: PartitionScope(c.partition)})
+		report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(c.partition)})
 		if !reflect.DeepEqual(report.Coverage, c.want) {
 			t.Errorf("%s coverage = %+v, want %+v", c.partition, report.Coverage, c.want)
 		}
@@ -619,7 +623,7 @@ func TestEvaluateMeasuresGroupOverlap(t *testing.T) {
 	// Two records in scope with one train key are one shared key and two
 	// records.
 	sameKey := replaceLine(t, changed, 7, `"group_key":"g-5be27d"`, `"group_key":"g-7c1e9a"`)
-	report := evaluate(t, model, sameKey, Options{Scope: WindowScope(utc(6, 5), nil), Reference: bytes.NewReader(original)})
+	report := evaluate(t, model, sameKey, Options{MaxRecords: maxRecords, Scope: WindowScope(utc(6, 5), nil), Reference: bytes.NewReader(original)})
 	want := GroupOverlap{Reference: ReferenceDataset, SharedKeys: count(1), RecordsSharingTrainKeys: count(2)}
 	if !reflect.DeepEqual(report.GroupOverlap, want) {
 		t.Errorf("one key in two records: GroupOverlap = %+v, want %+v", report.GroupOverlap, want)
@@ -627,7 +631,7 @@ func TestEvaluateMeasuresGroupOverlap(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			options := Options{Scope: PartitionScope(c.partition)}
+			options := Options{MaxRecords: maxRecords, Scope: PartitionScope(c.partition)}
 			if c.reference != nil {
 				options.Reference = bytes.NewReader(c.reference)
 			}
@@ -643,7 +647,7 @@ func TestEvaluateMeasuresGroupOverlap(t *testing.T) {
 	// training report counted.
 	total := 0
 	for _, partition := range []evaluation.Partition{evaluation.Validation, evaluation.Test} {
-		report := evaluate(t, changedModel, changed, Options{Scope: PartitionScope(partition)})
+		report := evaluate(t, changedModel, changed, Options{MaxRecords: maxRecords, Scope: PartitionScope(partition)})
 		total += *report.GroupOverlap.RecordsSharingTrainKeys
 	}
 	if want := changedResult.Report.Partitions.GroupOverlap.RecordsSharingTrainKeys; total != want {
@@ -664,7 +668,7 @@ func TestEvaluateIgnoresKeysOfExcludedTrainRecords(t *testing.T) {
 		t.Fatalf("the training report counts %d records sharing train keys, want 0", got)
 	}
 
-	report := evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Validation)})
+	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Validation)})
 	want := GroupOverlap{Reference: ReferenceEvaluatedDataset, SharedKeys: count(0), RecordsSharingTrainKeys: count(0)}
 	if !reflect.DeepEqual(report.GroupOverlap, want) {
 		t.Errorf("GroupOverlap = %+v, want %+v", report.GroupOverlap, want)
@@ -676,7 +680,7 @@ func TestEvaluateRejectsAnotherReferenceDataset(t *testing.T) {
 	original := read(t, fixture)
 	model, _ := trainModel(t, original, baselineConfig(t))
 
-	_, err := Evaluate(context.Background(), model, bytes.NewReader(original), Options{
+	_, err := Evaluate(context.Background(), model, bytes.NewReader(original), Options{MaxRecords: maxRecords,
 		Scope:     PartitionScope(evaluation.Test),
 		Reference: bytes.NewReader(overlapping(t, original)),
 	})
@@ -704,7 +708,7 @@ func TestEvaluateStopsOnInvalidDatasets(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			dataset := read(t, c.dataset)
 
-			report, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{
+			report, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{MaxRecords: maxRecords,
 				Scope: PartitionScope(evaluation.Test),
 			})
 
@@ -760,10 +764,10 @@ func TestEvaluateValidatesBeforeReading(t *testing.T) {
 		options Options
 		want    string
 	}{
-		{"truncated artifact", model[:len(model)/2], Options{Scope: PartitionScope(evaluation.Test)}, "decode model artifact"},
-		{"invalid artifact", tampered, Options{Scope: PartitionScope(evaluation.Test)}, "selected epoch 0 is out of range"},
-		{"train partition", model, Options{Scope: PartitionScope(evaluation.Train)}, "never evaluated"},
-		{"threshold override", model, Options{Scope: PartitionScope(evaluation.Test), Threshold: float(2)}, "threshold override"},
+		{"truncated artifact", model[:len(model)/2], Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)}, "decode model artifact"},
+		{"invalid artifact", tampered, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)}, "selected epoch 0 is out of range"},
+		{"train partition", model, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Train)}, "never evaluated"},
+		{"threshold override", model, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test), Threshold: float(2)}, "threshold override"},
 	}
 
 	for _, c := range cases {
@@ -802,13 +806,13 @@ func TestEvaluateStopsWhenCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if _, err := Evaluate(ctx, model, failingReader{t}, Options{Scope: PartitionScope(evaluation.Test)}); !errors.Is(err, context.Canceled) {
+	if _, err := Evaluate(ctx, model, failingReader{t}, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)}); !errors.Is(err, context.Canceled) {
 		t.Errorf("canceled before reading: Evaluate() error = %v, want context.Canceled", err)
 	}
 
 	ctx, cancel = context.WithCancel(context.Background())
 	reader := &cancellingReader{data: bytes.NewReader(large), cancel: cancel}
-	if _, err := Evaluate(ctx, model, reader, Options{Scope: PartitionScope(evaluation.Test)}); !errors.Is(err, context.Canceled) {
+	if _, err := Evaluate(ctx, model, reader, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)}); !errors.Is(err, context.Canceled) {
 		t.Errorf("dataset: Evaluate() error = %v, want context.Canceled", err)
 	}
 	if reader.read > limit {
@@ -817,7 +821,7 @@ func TestEvaluateStopsWhenCanceled(t *testing.T) {
 
 	ctx, cancel = context.WithCancel(context.Background())
 	reader = &cancellingReader{data: bytes.NewReader(large), cancel: cancel}
-	_, err := Evaluate(ctx, model, failingReader{t}, Options{Scope: PartitionScope(evaluation.Test), Reference: reader})
+	_, err := Evaluate(ctx, model, failingReader{t}, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test), Reference: reader})
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("reference: Evaluate() error = %v, want context.Canceled", err)
 	}
@@ -834,9 +838,9 @@ func TestEvaluateOnlyReads(t *testing.T) {
 	model, _ := trainModel(t, dataset, selectionConfig(t))
 	modelCopy, datasetCopy := bytes.Clone(model), bytes.Clone(dataset)
 
-	options := Options{Scope: PartitionScope(evaluation.Test)}
+	options := Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)}
 	first := evaluate(t, model, dataset, options)
-	evaluate(t, model, dataset, Options{Scope: PartitionScope(evaluation.Test), Threshold: float(0)})
+	evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test), Threshold: float(0)})
 	again := evaluate(t, model, dataset, options)
 
 	if !bytes.Equal(model, modelCopy) || !bytes.Equal(dataset, datasetCopy) {
@@ -847,5 +851,40 @@ func TestEvaluateOnlyReads(t *testing.T) {
 	}
 	if first.Threshold.Source != ThresholdFromArtifact {
 		t.Errorf("Threshold = %+v, want the artifact's", first.Threshold)
+	}
+}
+
+// Each dataset is read up to the record limit, and the limit is checked
+// before anything is read.
+func TestEvaluateStopsAtTheRecordLimit(t *testing.T) {
+	dataset := read(t, fixture)
+	model, _ := trainModel(t, dataset, baselineConfig(t))
+
+	// The first seven records, within the limit.
+	seven := bytes.Join(bytes.SplitAfter(dataset, []byte("\n"))[:7], nil)
+
+	cases := map[string]struct {
+		dataset []byte
+		options Options
+	}{
+		"dataset":   {dataset, Options{MaxRecords: 7, Scope: PartitionScope(evaluation.Test)}},
+		"reference": {seven, Options{MaxRecords: 7, Scope: PartitionScope(evaluation.Test), Reference: bytes.NewReader(dataset)}},
+	}
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			_, err := Evaluate(context.Background(), model, bytes.NewReader(c.dataset), c.options)
+
+			var limit *trainingdata.RecordLimitError
+			if !errors.As(err, &limit) || limit.Limit != 7 {
+				t.Fatalf("Evaluate() error = %v, want a *trainingdata.RecordLimitError", err)
+			}
+		})
+	}
+
+	evaluate(t, model, dataset, Options{MaxRecords: 8, Scope: PartitionScope(evaluation.Test), Reference: bytes.NewReader(dataset)})
+
+	_, err := Evaluate(context.Background(), model, failingReader{t}, Options{Scope: PartitionScope(evaluation.Test)})
+	if err == nil || !strings.Contains(err.Error(), "record limit must be at least 1") {
+		t.Errorf("no limit: Evaluate() error = %v", err)
 	}
 }
