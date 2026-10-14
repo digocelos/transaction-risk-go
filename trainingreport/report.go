@@ -104,9 +104,9 @@ type SourceState struct {
 // source order.
 func NewCoverage(train, validation, test []pixrisk.Prepared) Coverage {
 	coverage := Coverage{
-		Train:               partitionCoverage(train),
-		Validation:          partitionCoverage(validation),
-		Test:                partitionCoverage(test),
+		Train:               NewPartitionCoverage(train),
+		Validation:          NewPartitionCoverage(validation),
+		Test:                NewPartitionCoverage(test),
 		NotExercisedInTrain: []SourceState{},
 	}
 
@@ -121,7 +121,10 @@ func NewCoverage(train, validation, test []pixrisk.Prepared) Coverage {
 	return coverage
 }
 
-func partitionCoverage(records []pixrisk.Prepared) PartitionCoverage {
+// NewPartitionCoverage counts prepared usable records by population, limit
+// period, and availability state of each optional source. Every possible
+// population, period, and state is present, with 0 when no record has it.
+func NewPartitionCoverage(records []pixrisk.Prepared) PartitionCoverage {
 	coverage := PartitionCoverage{
 		UsableRecords: len(records),
 		Populations:   map[string]int{},
