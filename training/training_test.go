@@ -3,7 +3,6 @@ package training
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -224,25 +223,9 @@ func TestRunBuildsTheConfiguredArchitecture(t *testing.T) {
 	cfg.HiddenLayers = []int{8, 3}
 	result := run(t, read(t, pixRiskFixture), cfg)
 
-	data, err := result.Network.MarshalWithProvenance(pixrisk.Schema,
-		trainingreport.Provenance(result.Report, strings.Repeat("0", 64)))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var model struct {
-		InputSize int `json:"input_size"`
-		Layers    []struct {
-			Weights [][]float64 `json:"weights"`
-		} `json:"layers"`
-	}
-	if err := json.Unmarshal(data, &model); err != nil {
-		t.Fatal(err)
-	}
-
-	sizes := []int{model.InputSize}
-	for _, layer := range model.Layers {
-		sizes = append(sizes, len(layer.Weights))
+	sizes := []int{result.Network.InputSize()}
+	for _, layer := range result.Network.Layers() {
+		sizes = append(sizes, len(layer.Biases))
 	}
 	if !reflect.DeepEqual(sizes, []int{62, 8, 3, 1}) {
 		t.Errorf("layer sizes = %v, want [62 8 3 1]", sizes)

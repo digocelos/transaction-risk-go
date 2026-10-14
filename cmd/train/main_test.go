@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/digocelos/transaction-risk-go/nn"
+	"github.com/digocelos/transaction-risk-go/modelartifact"
+	"github.com/digocelos/transaction-risk-go/trainingrun"
 )
 
 const (
@@ -43,10 +44,9 @@ func train(t *testing.T, args ...string) result {
 // flags returns a complete, valid set of flags that writes into dir.
 func flags(dir string) map[string]string {
 	return map[string]string{
-		"config":        baseline,
-		"dataset":       fixture,
-		"model-output":  filepath.Join(dir, "trained-model.json"),
-		"report-output": filepath.Join(dir, "training-report.json"),
+		"config":  baseline,
+		"dataset": fixture,
+		"run-dir": filepath.Join(dir, "run"),
 	}
 }
 
@@ -123,6 +123,12 @@ type trainedSummary struct {
 	Records       records `json:"records"`
 	ModelSHA256   string  `json:"model_sha256"`
 	ReportSHA256  string  `json:"report_sha256"`
+	ConfigSHA256  string  `json:"config_sha256"`
+}
+
+// runFile returns the path of a file of the run in f.
+func runFile(f map[string]string, name string) string {
+	return filepath.Join(f["run-dir"], name)
 }
 
 // entries lists the names in dir.
@@ -153,35 +159,37 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 	var summary trainedSummary
 	output(t, r.stdout, &summary)
 
-	reportSHA256 := fileSHA256(t, f["report-output"])
+	reportSHA256 := fileSHA256(t, runFile(f, "report.json"))
 	want := trainedSummary{
 		Status:        "trained",
 		DatasetSHA256: fileSHA256(t, fixture),
 		Records:       records{Total: 8, Usable: 6, Insufficient: 1, Immature: 1},
-		ModelSHA256:   fileSHA256(t, f["model-output"]),
+		ModelSHA256:   fileSHA256(t, runFile(f, "model.json")),
 		ReportSHA256:  reportSHA256,
+		ConfigSHA256:  fileSHA256(t, runFile(f, "config.json")),
 	}
 	if summary != want {
 		t.Errorf("summary = %+v\nwant      %+v", summary, want)
 	}
 
-	network, provenance, err := nn.LoadWithProvenance(f["model-output"], "pix-risk-v1")
+	run, err := trainingrun.Verify(f["run-dir"])
 	if err != nil {
-		t.Fatalf("load trained model: %v", err)
+		t.Fatalf("the published run does not verify: %v", err)
 	}
 
+	artifact := run.Artifact
 	switch {
-	case provenance.ReportSHA256 != reportSHA256:
-		t.Errorf("model report_sha256 = %s, want %s", provenance.ReportSHA256, reportSHA256)
-	case provenance.DatasetSHA256 != want.DatasetSHA256:
-		t.Errorf("model dataset_sha256 = %s", provenance.DatasetSHA256)
-	case provenance.TrainingExampleVersion != "pix-training-example-v2":
-		t.Errorf("training example version = %s", provenance.TrainingExampleVersion)
-	case provenance.Seed != 42 || provenance.Epochs != 5000 || provenance.LearningRate != 1 || provenance.Threshold != 0.5:
-		t.Errorf("model configuration = %+v", provenance)
+	case artifact.Training.ReportSHA256 != reportSHA256:
+		t.Errorf("model report_sha256 = %s, want %s", artifact.Training.ReportSHA256, reportSHA256)
+	case artifact.Training.DatasetSHA256 != want.DatasetSHA256:
+		t.Errorf("model dataset_sha256 = %s", artifact.Training.DatasetSHA256)
+	case artifact.SelectedEpoch != 5000 || artifact.Threshold.Value != 0.5 || artifact.Training.ConfigSHA256 != want.ConfigSHA256:
+		t.Errorf("model selection = %d %+v", artifact.SelectedEpoch, artifact.Threshold)
+	case run.Config.Seed != 42 || run.Config.LearningRate != 1:
+		t.Errorf("configuration = %+v", run.Config)
 	}
 
-	if _, err := network.Predict(make([]float64, 62)); err != nil {
+	if _, err := artifact.Network.Predict(make([]float64, 62)); err != nil {
 		t.Errorf("the trained network does not take the 62 pix-risk-v1 features: %v", err)
 	}
 
@@ -193,8 +201,8 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 		t.Errorf("stderr has no training loss progress:\n%s", r.stderr)
 	}
 
-	if got := entries(t, dir); len(got) != 2 {
-		t.Errorf("output directory = %v, want only the model and the report", got)
+	if got := entries(t, dir); len(got) != 1 || len(entries(t, f["run-dir"])) != 4 {
+		t.Errorf("output directory = %v, want only the run with its four files", got)
 	}
 }
 
@@ -208,8 +216,8 @@ func TestTrainIsReproducible(t *testing.T) {
 		t.Fatalf("exit codes = %d, %d", firstRun.code, secondRun.code)
 	}
 
-	for _, name := range []string{"model-output", "report-output"} {
-		if fileSHA256(t, first[name]) != fileSHA256(t, second[name]) {
+	for _, name := range []string{"model.json", "report.json", "config.json", "manifest.json"} {
+		if fileSHA256(t, runFile(first, name)) != fileSHA256(t, runFile(second, name)) {
 			t.Errorf("%s differs between identical runs", name)
 		}
 	}
@@ -332,17 +340,16 @@ func TestTrainRequiresEveryFlag(t *testing.T) {
 
 func TestTrainRejectsInvalidArguments(t *testing.T) {
 	tests := map[string]func(f map[string]string) []string{
-		"same output paths": func(f map[string]string) []string {
-			f["report-output"] = f["model-output"]
-			return args(f)
-		},
 		"missing dataset": func(f map[string]string) []string {
-			f["dataset"] = filepath.Join(filepath.Dir(f["model-output"]), "absent.jsonl")
+			f["dataset"] = filepath.Join(filepath.Dir(f["run-dir"]), "absent.jsonl")
 			return args(f)
 		},
 		"missing configuration": func(f map[string]string) []string {
-			f["config"] = filepath.Join(filepath.Dir(f["model-output"]), "absent.json")
+			f["config"] = filepath.Join(filepath.Dir(f["run-dir"]), "absent.json")
 			return args(f)
+		},
+		"removed output flags": func(f map[string]string) []string {
+			return append(args(f), "--model-output", filepath.Join(filepath.Dir(f["run-dir"]), "model.json"))
 		},
 		"version 1 flags": func(f map[string]string) []string {
 			return append(args(f), "--seed", "42")
@@ -367,40 +374,54 @@ func TestTrainRejectsInvalidArguments(t *testing.T) {
 	}
 }
 
-func TestTrainNeverOverwritesItsInputs(t *testing.T) {
+// A run directory is never written over an existing file or directory,
+// such as the dataset, the configuration, or an earlier run.
+func TestTrainNeverOverwritesExistingPaths(t *testing.T) {
 	for _, input := range []string{"dataset", "config"} {
-		for _, output := range []string{"model-output", "report-output"} {
-			f := flags(t.TempDir())
+		f := flags(t.TempDir())
 
-			data, err := os.ReadFile(f[input])
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			copied := filepath.Join(t.TempDir(), input)
-			if err := os.WriteFile(copied, data, 0o644); err != nil {
-				t.Fatal(err)
-			}
-
-			f[input] = copied
-			f[output] = copied
-
-			if r := train(t, args(f)...); r.code != 1 || r.stdout != "" {
-				t.Errorf("-%s is the %s: exit code %d, stdout %q", output, input, r.code, r.stdout)
-			}
-
-			if after, err := os.ReadFile(copied); err != nil || !bytes.Equal(after, data) {
-				t.Errorf("-%s is the %s: the %s was overwritten", output, input, input)
-			}
+		data, err := os.ReadFile(f[input])
+		if err != nil {
+			t.Fatal(err)
 		}
+
+		copied := filepath.Join(t.TempDir(), input)
+		if err := os.WriteFile(copied, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		f[input] = copied
+		f["run-dir"] = copied
+
+		if r := train(t, args(f)...); r.code != 1 || r.stdout != "" {
+			t.Errorf("-run-dir is the %s: exit code %d, stdout %q", input, r.code, r.stdout)
+		}
+
+		if after, err := os.ReadFile(copied); err != nil || !bytes.Equal(after, data) {
+			t.Errorf("-run-dir is the %s: the %s was overwritten", input, input)
+		}
+	}
+
+	f := flags(t.TempDir())
+	if r := train(t, args(f)...); r.code != 0 {
+		t.Fatalf("first run: exit code %d", r.code)
+	}
+	model := fileSHA256(t, runFile(f, "model.json"))
+
+	f["config"] = writeConfig(t, t.TempDir(), `"seed": 42`, `"seed": 7`)
+	if r := train(t, args(f)...); r.code != 1 || !strings.Contains(r.stderr, "already exists") {
+		t.Errorf("second run into the same directory: exit code %d, stderr:\n%s", r.code, r.stderr)
+	}
+	if fileSHA256(t, runFile(f, "model.json")) != model {
+		t.Error("a second run changed an existing run")
 	}
 }
 
-// A failed write leaves neither artifact nor temporary file behind.
+// A failed publication leaves neither a run nor a staging directory.
 func TestTrainWritesArtifactsAtomically(t *testing.T) {
 	dir := t.TempDir()
 	f := flags(dir)
-	f["model-output"] = filepath.Join(dir, "missing", "trained-model.json")
+	f["run-dir"] = filepath.Join(dir, "missing", "run")
 
 	r := train(t, args(f)...)
 
@@ -483,7 +504,7 @@ func TestTrainSelectsOnValidation(t *testing.T) {
 			StopReason    string `json:"stop_reason"`
 		} `json:"selection"`
 	}
-	data, err = os.ReadFile(f["report-output"])
+	data, err = os.ReadFile(runFile(f, "report.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -495,12 +516,12 @@ func TestTrainSelectsOnValidation(t *testing.T) {
 		t.Errorf("selection = %+v", report.Selection)
 	}
 
-	_, provenance, err := nn.LoadWithProvenance(f["model-output"], "pix-risk-v1")
+	artifact, err := modelartifact.Load(runFile(f, "model.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provenance.Epochs != report.Selection.SelectedEpoch {
-		t.Errorf("model epochs = %d, want the selected epoch %d", provenance.Epochs, report.Selection.SelectedEpoch)
+	if artifact.SelectedEpoch != report.Selection.SelectedEpoch {
+		t.Errorf("model selected epoch = %d, want %d", artifact.SelectedEpoch, report.Selection.SelectedEpoch)
 	}
 }
 

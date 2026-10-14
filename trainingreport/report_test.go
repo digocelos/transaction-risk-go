@@ -2,18 +2,14 @@ package trainingreport
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
-	"github.com/digocelos/transaction-risk-go/nn"
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
@@ -336,53 +332,5 @@ func TestCoverageListsStatesTheTrainPartitionNeverHas(t *testing.T) {
 
 	if coverage.Train.UsableRecords != 0 || coverage.Train.Populations["new_payer_account"] != 0 {
 		t.Errorf("empty coverage = %+v", coverage.Train)
-	}
-}
-
-// A trained model states exactly which dataset bytes, configuration, and
-// selection produced it, and binds its report by hash.
-func TestModelProvenanceBindsTheReport(t *testing.T) {
-	cfg := config(t, "04-best-validation-loss.json")
-	report := buildReport(t, cfg)
-
-	objective, value, candidates, rate := "validation_loss", 0.0123, 2, 0.5
-	report.Selection = Selection{
-		RequestedEpochs: 3000, ActualEpochs: 400, SelectedEpoch: 210, StopReason: StopEarlyStopping,
-		CheckpointPolicy: "best_validation", Objective: &objective, Evaluations: 40, SelectedObjectiveValue: &value,
-		Threshold: ThresholdChoice{Policy: "max_recall_at_max_false_positive_rate", Value: 0.6,
-			MaxFalsePositiveRate: &rate, Candidates: &candidates},
-	}
-	report.Validation.Threshold = 0.6
-	report.Test.Threshold = 0.6
-
-	reportBytes := marshal(t, report)
-	reportSum := sha256.Sum256(reportBytes)
-
-	network, err := nn.NewNetwork(cfg.Seed, cfg.Sizes()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	path := filepath.Join(t.TempDir(), "trained.json")
-	if err := network.SaveWithProvenance(path, "pix-risk-v1", Provenance(report, hex.EncodeToString(reportSum[:]))); err != nil {
-		t.Fatalf("SaveWithProvenance() error = %v", err)
-	}
-
-	_, loaded, err := nn.LoadWithProvenance(path, "pix-risk-v1")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	switch {
-	case loaded.ReportSHA256 != hex.EncodeToString(reportSum[:]):
-		t.Errorf("report_sha256 = %s", loaded.ReportSHA256)
-	case loaded.Epochs != 210 || loaded.Threshold != 0.6:
-		t.Errorf("provenance = %+v, want the selected epoch and threshold", loaded)
-	case loaded.TrainingExampleVersion != "pix-training-example-v2" || loaded.Records.Usable != 6:
-		t.Errorf("provenance = %+v", loaded)
-	}
-
-	if strings.Contains(string(reportBytes), "NaN") {
-		t.Error("report contains NaN")
 	}
 }
