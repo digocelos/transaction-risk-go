@@ -41,8 +41,14 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Test
-        run: go test ./...
+      - name: Unit tests
+        run: go test $(go list ./... | grep -v '/internal/e2e$')
+
+      # The supported workflow from this checkout, with the built commands:
+      # training, selection, publication, evaluation, and scoring on
+      # synthetic data, outcome isolation, and failures that write nothing.
+      - name: Integration tests
+        run: go test -count=1 -v ./internal/e2e/
 
       - name: Race detector on shared scoring
         run: go test -race ./scoring/ ./cmd/predict/
