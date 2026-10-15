@@ -253,3 +253,41 @@ func TestInterruptedTrainingPublishesNothing(t *testing.T) {
 		t.Errorf("the interrupted run left %v", got)
 	}
 }
+
+// The training data template converts and trains with the built commands,
+// and files in data/, where the guide puts real data, are ignored by git.
+func TestTemplateWorkflow(t *testing.T) {
+	bin, work := commands(t), t.TempDir()
+
+	dataset := filepath.Join(work, "training.jsonl")
+	converted := run(t, bin, "convert", nil,
+		"-input", "templates/training-data/pix-training-example-v2.csv", "-output", dataset)
+	var summary struct {
+		Status  string `json:"status"`
+		Records struct {
+			Usable int `json:"usable"`
+		} `json:"records"`
+	}
+	decode(t, "convert", converted, 0, &summary)
+	if summary.Status != "converted" || summary.Records.Usable != 4 {
+		t.Errorf("convert = %+v", summary)
+	}
+
+	var trained struct {
+		Status string `json:"status"`
+	}
+	decode(t, "train", run(t, bin, "train", nil,
+		"-config", "docs/contracts/training-config-examples/01-baseline.json",
+		"-dataset", dataset, "-run-dir", filepath.Join(work, "run")), 0, &trained)
+
+	if err := exec.Command("git", "--version").Run(); err != nil {
+		t.Skipf("git does not run here: %v", err)
+	}
+	for _, path := range []string{"data/training.csv", "data/training.jsonl", "data/run/model.json"} {
+		check := exec.Command("git", "check-ignore", "-q", path)
+		check.Dir = root
+		if err := check.Run(); err != nil {
+			t.Errorf("git does not ignore %s: %v", path, err)
+		}
+	}
+}

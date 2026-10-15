@@ -31,3 +31,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Training data filled with real payments; see templates/training-data/.
+/data/

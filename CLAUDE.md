@@ -9,6 +9,7 @@ Workflow packages, in the order a model moves through them:
 - `pixinput/`: decodes and validates `pix-payer-input-v2` scoring inputs.
 - `pixrisk/`: the `pix-risk-v1` feature schema: preparation, fitted standardization, coverage.
 - `trainingdata/`: reads and classifies `pix-training-example-v2` datasets.
+- `trainingcsv/`: converts training data in the `pix-training-csv-v1` CSV layout to JSON Lines; the template is in `templates/training-data/`.
 - `trainingconfig/`: decodes `pix-training-config-v2` configurations.
 - `evaluation/`: temporal partitions, metrics, threshold selection.
 - `nn/`: the dense network and full-batch gradient descent.
@@ -17,7 +18,7 @@ Workflow packages, in the order a model moves through them:
 - `modelevaluation/`: independent evaluation of saved artifacts.
 - `scoring/`: loads an artifact once and scores inputs.
 - `internal/`: strict JSON, synthetic datasets, and the end-to-end test.
-- `cmd/`: `synthesize`, `train`, `promote`, `evaluate`, `predict`.
+- `cmd/`: `convert`, `synthesize`, `train`, `promote`, `evaluate`, `predict`.
 
 ## Commands
 
@@ -36,7 +37,7 @@ gofmt -l .
 - **License**: the project is Apache-2.0. Keep `LICENSE` unchanged. Add only dependencies with Apache-2.0-compatible licenses.
 - **Dependencies**: the module uses the standard library only. Adding an external dependency is an architectural decision; record it in `docs/adr/`.
 - **Versions**: contracts, the feature schema, the training configuration, reports, and the artifact each have their own version (ADR 0003). Any change to what a version accepts or produces, including feature order or preparation, is a new version with its own specification; never change a released version in place (ADR 0006).
-- **Data**: no real payment data, credentials, or production artifacts in the repository. Tests and examples use synthetic data and generate their artifacts.
+- **Data**: no real payment data, credentials, or production artifacts in the repository. Tests and examples use synthetic data and generate their artifacts. Real data belongs in `data/`, which git ignores.
 
 ## Incremental development
 
