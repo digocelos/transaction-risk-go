@@ -5,7 +5,11 @@ package e2e
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"flag"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,6 +18,63 @@ import (
 
 // root is the repository root, relative to this package.
 const root = "../.."
+
+// bin holds every command, built once from this checkout; it is empty with
+// -short.
+var bin string
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+	if !testing.Short() {
+		dir, err := os.MkdirTemp("", "e2e-bin-")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+
+		// Without VCS stamping, concurrent builds of other tests never
+		// contend for the repository's lock.
+		build := exec.Command("go", "build", "-buildvcs=false", "-o", dir+string(filepath.Separator), "./cmd/...")
+		build.Dir = root
+		if output, err := build.CombinedOutput(); err != nil {
+			fmt.Fprintf(os.Stderr, "go build: %v\n%s", err, output)
+			os.RemoveAll(dir)
+			os.Exit(1)
+		}
+		bin = dir
+	}
+
+	code := m.Run()
+	if bin != "" {
+		os.RemoveAll(bin)
+	}
+	os.Exit(code)
+}
+
+// commands returns the directory of the built commands, or skips the test
+// with -short.
+func commands(t *testing.T) string {
+	t.Helper()
+	if bin == "" {
+		t.Skip("builds every command")
+	}
+	return bin
+}
+
+func digest(data []byte) string {
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func read(t *testing.T, path string) []byte {
+	t.Helper()
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
 
 type step struct {
 	code   int
@@ -55,18 +116,7 @@ func decode(t *testing.T, name string, s step, want int, value any) {
 // The quick start of the README, from a clean checkout: no committed model
 // and no real data.
 func TestDocumentedWorkflow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("builds every command")
-	}
-
-	bin, work := t.TempDir(), t.TempDir()
-	// Without VCS stamping, concurrent builds of other tests never contend
-	// for the repository's lock.
-	build := exec.Command("go", "build", "-buildvcs=false", "-o", bin+string(filepath.Separator), "./cmd/...")
-	build.Dir = root
-	if output, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build: %v\n%s", err, output)
-	}
+	bin, work := commands(t), t.TempDir()
 
 	dataset := filepath.Join(work, "data.jsonl")
 	synthesized := run(t, bin, "synthesize", nil, "-records", "3000", "-seed", "1")
