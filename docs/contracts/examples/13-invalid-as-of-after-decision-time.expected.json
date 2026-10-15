@@ -1,9 +1,0 @@
-{
-  "status": "invalid_input",
-  "issues": [
-    {
-      "path": "/observations/payer_account/initiated_outgoing_pix_24h/as_of",
-      "code": "as_of_after_decision_time"
-    }
-  ]
-}

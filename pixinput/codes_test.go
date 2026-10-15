@@ -113,8 +113,8 @@ func TestDecodeReportsIssues(t *testing.T) {
 			[]pathCode{{"/contract_version", "null_not_allowed"}}},
 		{"version not a string", edit(t, map[string]any{"contract_version": 1}),
 			[]pathCode{{"/contract_version", "wrong_type"}}},
-		{"version unsupported hides v1 issues", edit(t, map[string]any{
-			"contract_version":         "pix-payer-input-v2",
+		{"version unsupported hides other issues", edit(t, map[string]any{
+			"contract_version":         "pix-payer-input-v1",
 			"pix_payment/amount_cents": 0,
 			"channel":                  "mobile",
 		}), []pathCode{{"/contract_version", "unsupported_contract_version"}}},
@@ -291,7 +291,7 @@ func TestDecodeReportsIssues(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Decode(test.input, ContractV1)
+			_, err := Decode(test.input, ContractV2)
 
 			if got := issuesOf(t, err); !reflect.DeepEqual(got, test.want) {
 				t.Errorf("issues = %v\nwant     %v", got, test.want)
@@ -326,7 +326,7 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := Decode(test.input, ContractV1); err != nil {
+			if _, err := Decode(test.input, ContractV2); err != nil {
 				t.Errorf("Decode() error = %v", err)
 			}
 		})
@@ -336,7 +336,7 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 func TestDecodePreservesOpenKeyType(t *testing.T) {
 	input, err := Decode(edit(t, map[string]any{
 		"observations/recipient_pix_key/entry/key_type": "NEW_KEY_TYPE_2027",
-	}), ContractV1)
+	}), ContractV2)
 	if err != nil {
 		t.Fatal(err)
 	}

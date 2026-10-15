@@ -1,6 +1,6 @@
 # Input contract `pix-payer-input-v2`
 
-**Status:** Normative for `pix-payer-input-v2`. It replaces [`pix-payer-input-v1`](pix-payer-input-v1.md) (ADR 0013), and no command accepts version 1 any more.
+**Status:** Normative for `pix-payer-input-v2`. It replaces [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history.
 
 ## 1. Scope
 
@@ -426,7 +426,7 @@ Validation runs in four stages. Stages 1 and 2 stop validation when they find an
 
 1. **Document.** Checks the rules of [section 4](#4-document) in this order: size, byte order mark, UTF-8, JSON syntax and trailing data, top-level object. The first failure is the only issue reported. If those pass, every duplicate member is reported, each at the path of the repeated member. If any duplicate exists, validation stops, because the document is ambiguous.
 2. **Contract version.** Locates `/contract_version`. If it is absent, the issue is `required`; if it is `null`, `null_not_allowed`; if it is not a string, `wrong_type`; if it is a string that is not a supported version, `unsupported_contract_version`. On any of these, validation stops: it does not assume `pix-payer-input-v1`, does not apply its structure, and reports no `unknown_member` or other version-specific issue.
-3. **Structure and values.** Applies the structure of `pix-payer-input-v1` and collects every issue: unknown members, required members, conditional subjects, nulls, types, formats, ranges, and enumeration values. It does not descend into a value with the wrong type, nor into a subject rejected with `member_not_allowed`. A conditional subject's presence is checked only when its discriminator is valid. A `null` is checked only for whether its member is nullable.
+3. **Structure and values.** Applies the structure of this specification and collects every issue: unknown members, required members, conditional subjects, nulls, types, formats, ranges, and enumeration values. It does not descend into a value with the wrong type, nor into a subject rejected with `member_not_allowed`. A conditional subject's presence is checked only when its discriminator is valid. A `null` is checked only for whether its member is nullable.
 4. **Consistency.** Checks the rules of [section 10](#10-consistency-rules). A rule is checked only when every value it involves passed stage 3 and is not `null`.
 
 ### 11.2 Ordering
@@ -774,7 +774,7 @@ The `scoring` package and `cmd/predict` score a document with an explicit [`pix-
 
 ## 18. Migration notes
 
-Changes from `pix-payer-input-v1`:
+Changes from [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md):
 
 - **M1.** `contract_version` is `pix-payer-input-v2`.
 - **M2.** `pix_payment` gains the required members `reference_time_offset` and `payer_limit_period` ([section 8](#8-pix-payment)), with the new value type offset string ([5.5](#55-offset-string)). The window counter type moves to [5.6](#56-window-counter).

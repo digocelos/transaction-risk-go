@@ -293,7 +293,7 @@ func TestPredictRejectsOtherDocuments(t *testing.T) {
 		input []byte
 		issue map[string]any
 	}{
-		{"version 1", read(t, "../../docs/contracts/examples/01-complete.json"),
+		{"version 1", read(t, filepath.Join(examplesDir, "20-invalid-unsupported-version.json")),
 			map[string]any{"path": "/contract_version", "code": "unsupported_contract_version"}},
 		{"training record", record,
 			map[string]any{"path": "/contract_version", "code": "required"}},
@@ -320,6 +320,19 @@ func TestPredictRejectsOtherDocuments(t *testing.T) {
 	}
 }
 
+// retiredModel writes a file in the retired educational model format,
+// which no command reads.
+func retiredModel(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "model.json")
+	retired := `{"format_version": 1, "feature_schema": "transaction-features-v1", "activation": "sigmoid", "input_size": 4, "layers": []}`
+	if err := os.WriteFile(path, []byte(retired+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 // unreadable fails the test when it is read.
 type unreadable struct{ t *testing.T }
 
@@ -344,7 +357,7 @@ func TestPredictOperationalFailures(t *testing.T) {
 	}{
 		{"missing -model", unreadable{t}, []string{input}, "missing required flag -model"},
 		{"missing model file", unreadable{t}, []string{"-model", filepath.Join(dir, "absent.json")}, "read model artifact"},
-		{"educational model", unreadable{t}, []string{"-model", "../../model.json"}, "decode model artifact"},
+		{"retired model format", unreadable{t}, []string{"-model", retiredModel(t)}, "decode model artifact"},
 		{"dataset as model", unreadable{t}, []string{"-model", fixture}, "decode model artifact"},
 		{"missing input file", nil, []string{"-model", model, filepath.Join(dir, "absent.json")}, "absent.json"},
 		{"too many arguments", unreadable{t}, []string{"-model", model, input, input}, "unexpected argument"},

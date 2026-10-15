@@ -45,7 +45,7 @@ func scanAll(t *testing.T, r io.Reader) ([]Record, Summary) {
 
 	var records []Record
 
-	summary, err := Scan(r, TransactionFeaturesV1, DefaultMaxRecords, func(record Record) error {
+	summary, err := Scan(r, PixRiskV1, DefaultMaxRecords, func(record Record) error {
 		records = append(records, record)
 		return nil
 	})
@@ -123,14 +123,14 @@ func TestScanClassifiesRecords(t *testing.T) {
 			[]outcome{invalid(1, "/scoring_input/pix_payment/amount_cents", "duplicate_member")}},
 
 		// Version.
-		{"version absent", edit(t, `"training_example_version":"pix-training-example-v1",`, "") + "\n",
+		{"version absent", edit(t, `"training_example_version":"pix-training-example-v2",`, "") + "\n",
 			[]outcome{invalid(1, "/training_example_version", "required")}},
-		{"version null", edit(t, `"pix-training-example-v1"`, "null") + "\n",
+		{"version null", edit(t, `"pix-training-example-v2"`, "null") + "\n",
 			[]outcome{invalid(1, "/training_example_version", "null_not_allowed")}},
-		{"version not a string", edit(t, `"pix-training-example-v1"`, "1") + "\n",
+		{"version not a string", edit(t, `"pix-training-example-v2"`, "1") + "\n",
 			[]outcome{invalid(1, "/training_example_version", "wrong_type")}},
-		{"unsupported version hides v1 issues", edit(t, `"pix-training-example-v1",`,
-			`"pix-training-example-v2","extra":1,`) + "\n",
+		{"unsupported version hides other issues", edit(t, `"pix-training-example-v2",`,
+			`"pix-training-example-v1","extra":1,`) + "\n",
 			[]outcome{invalid(1, "/training_example_version", "unsupported_training_example_version")}},
 
 		// Structure and values.
@@ -161,7 +161,7 @@ func TestScanClassifiesRecords(t *testing.T) {
 		{"loss above 2^53-1", edit(t, `"label":"legitimate","label_as_of":"2026-10-01T03:00:00Z","loss_amount_cents":0`,
 			`"label":"fraud","label_as_of":"2026-10-01T03:00:00Z","loss_amount_cents":9007199254740992`) + "\n",
 			[]outcome{invalid(1, "/outcome/loss_amount_cents", "out_of_range")}},
-		{"embedded issues are prefixed", edit(t, `"contract_version":"pix-payer-input-v1",`, "") + "\n",
+		{"embedded issues are prefixed", edit(t, `"contract_version":"pix-payer-input-v2",`, "") + "\n",
 			[]outcome{invalid(1, "/scoring_input/contract_version", "required")}},
 		{"embedded document too large", edit(t, `"scoring_input":{`,
 			`"scoring_input":{`+strings.Repeat(" ", 70000)) + "\n",
@@ -194,8 +194,8 @@ func TestScanClassifiesRecords(t *testing.T) {
 		{"label one nanosecond younger than 90 days", edit(t, `"2026-10-01T03:00:00Z"`, `"2026-08-12T17:03:07.119999999Z"`) + "\n",
 			[]outcome{{Line: 1, Category: Immature}}},
 		{"insufficient wins over immature", strings.NewReplacer(
-			`"payer_device_usage":"payer_device"`, `"payer_device_usage":"no_payer_device"`,
-			`"payer_device":{"settled_outgoing_pix_90d":{"count":14,"as_of":"2026-05-14T06:00:00Z"}},`, "",
+			`"initiated_outgoing_pix_24h":{"count":2,"as_of":"2026-05-14T17:03:06.874Z"}`,
+			`"initiated_outgoing_pix_24h":{"count":2,"as_of":"2026-05-14T16:00:00Z"}`,
 			`"2026-10-01T03:00:00Z"`, `"2026-06-01T00:00:00Z"`,
 		).Replace(base),
 			[]outcome{{Line: 1, Category: Insufficient}}},
@@ -255,14 +255,14 @@ func TestScanDecodesTypedExamples(t *testing.T) {
 		t.Errorf("embedded amount = %d", fraud.ScoringInput.PixPayment.AmountCents)
 	}
 
-	unknown := records[2].Example
+	unknown := records[4].Example
 	if unknown.Outcome.LossAmountCents != nil || unknown.GroupKey != nil {
-		t.Errorf("line 3 = %+v, want unknown loss and no group key", unknown)
+		t.Errorf("line 5 = %+v, want unknown loss and no group key", unknown)
 	}
 
-	if blockers := records[6].Blockers; len(blockers) != 1 ||
-		blockers[0] != (Blocker{Path: "/scoring_input/pix_payment/payer_device_usage", Reason: "not_applicable"}) {
-		t.Errorf("line 7 blockers = %+v", blockers)
+	if blockers := records[8].Blockers; len(blockers) != 1 || blockers[0] != (Blocker{
+		Path: "/scoring_input/observations/payer_account/initiated_outgoing_pix_24h/as_of", Reason: "stale"}) {
+		t.Errorf("line 9 blockers = %+v", blockers)
 	}
 }
 
@@ -309,7 +309,7 @@ func TestScanIsIndependentOfReadSizes(t *testing.T) {
 		t.Errorf("one-byte reads changed the result:\n%+v\n%+v", wholeSummary, oneByteSummary)
 	}
 
-	if wholeSummary.DatasetSHA256 != "cec33cf8c4c4354a5db8b89e7e005d6566105fc05d1146f1d1e97cd236d9d35c" {
+	if wholeSummary.DatasetSHA256 != "293b11bd762e865402c934328e41827b45bee10ba4a6d947c125ef0af3df7cc8" {
 		t.Errorf("DatasetSHA256 = %s", wholeSummary.DatasetSHA256)
 	}
 }
@@ -353,7 +353,7 @@ func TestScanUsesBoundedMemory(t *testing.T) {
 	baseline := heapInUse()
 	var peak uint64
 
-	summary, err := Scan(&repeatReader{line: line, count: records}, TransactionFeaturesV1, DefaultMaxRecords, func(record Record) error {
+	summary, err := Scan(&repeatReader{line: line, count: records}, PixRiskV1, DefaultMaxRecords, func(record Record) error {
 		if record.Line%5000 == 0 {
 			peak = max(peak, heapInUse())
 		}
@@ -399,7 +399,7 @@ func TestScanStopsOnErrors(t *testing.T) {
 	base := baseRecord(t)
 
 	visits := 0
-	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), TransactionFeaturesV1, DefaultMaxRecords, func(Record) error {
+	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), PixRiskV1, DefaultMaxRecords, func(Record) error {
 		visits++
 		return errVisit
 	})
@@ -409,7 +409,7 @@ func TestScanStopsOnErrors(t *testing.T) {
 
 	errDisk := errors.New("disk failure")
 	_, err = Scan(io.MultiReader(strings.NewReader(base+"\n"), iotest.ErrReader(errDisk)),
-		TransactionFeaturesV1, DefaultMaxRecords, func(Record) error { return nil })
+		PixRiskV1, DefaultMaxRecords, func(Record) error { return nil })
 	if !errors.Is(err, errDisk) {
 		t.Errorf("reader error: err = %v, want it to wrap %v", err, errDisk)
 	}
@@ -422,7 +422,7 @@ func TestScanStopsAtTheRecordLimit(t *testing.T) {
 	line := []byte(baseRecord(t) + "\n")
 
 	visits := 0
-	summary, err := Scan(&repeatReader{line: line, count: 1 << 30}, TransactionFeaturesV1, 25, func(Record) error {
+	summary, err := Scan(&repeatReader{line: line, count: 1 << 30}, PixRiskV1, 25, func(Record) error {
 		visits++
 		return nil
 	})
@@ -439,13 +439,13 @@ func TestScanStopsAtTheRecordLimit(t *testing.T) {
 	}
 
 	// A dataset with exactly the limit is read completely.
-	summary, err = Scan(&repeatReader{line: line, count: 25}, TransactionFeaturesV1, 25, func(Record) error { return nil })
+	summary, err = Scan(&repeatReader{line: line, count: 25}, PixRiskV1, 25, func(Record) error { return nil })
 	if err != nil || summary.Records.Total != 25 || summary.DatasetSHA256 == "" {
 		t.Errorf("at the limit: summary %+v, error %v", summary.Records, err)
 	}
 
 	for _, invalid := range []int{0, -1} {
-		if _, err := Scan(strings.NewReader(""), TransactionFeaturesV1, invalid, func(Record) error { return nil }); err == nil {
+		if _, err := Scan(strings.NewReader(""), PixRiskV1, invalid, func(Record) error { return nil }); err == nil {
 			t.Errorf("limit %d: Scan() error = nil", invalid)
 		}
 	}

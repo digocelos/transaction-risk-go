@@ -694,19 +694,22 @@ func TestEvaluateRejectsAnotherReferenceDataset(t *testing.T) {
 func TestEvaluateStopsOnInvalidDatasets(t *testing.T) {
 	model, _ := trainModel(t, read(t, fixture), baselineConfig(t))
 
+	// The fixture with every record relabeled as the retired version 1.
+	retired := bytes.ReplaceAll(read(t, fixture), []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`))
+
 	cases := []struct {
 		name      string
-		dataset   string
+		dataset   []byte
 		wantLines []int
 		wantCode  string
 	}{
-		{"invalid records", "../docs/contracts/training-examples-v2/dataset.jsonl", []int{7, 8}, "invalid_enum_value"},
-		{"version 1 records", "../docs/contracts/training-examples/dataset.jsonl", nil, "unsupported_training_example_version"},
+		{"invalid records", read(t, "../docs/contracts/training-examples-v2/dataset.jsonl"), []int{7, 8}, "invalid_enum_value"},
+		{"version 1 records", retired, []int{1, 8}, "unsupported_training_example_version"},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			dataset := read(t, c.dataset)
+			dataset := c.dataset
 
 			report, err := Evaluate(context.Background(), model, bytes.NewReader(dataset), Options{MaxRecords: maxRecords,
 				Scope: PartitionScope(evaluation.Test),

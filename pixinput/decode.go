@@ -40,7 +40,7 @@ func Decode(data []byte, versions ...string) (ScoringInput, error) {
 		return ScoringInput{}, newValidationError([]strictjson.Issue{*issue})
 	}
 
-	d := &decoder{v2: version == ContractV2}
+	d := &decoder{}
 	input := d.scoringInput(root)
 	input.ContractVersion = version
 
@@ -113,7 +113,7 @@ func checkContractVersion(root *strictjson.Value, versions []string) (string, *s
 		return "", &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "contract_version must not be null"}
 	case value.Kind != strictjson.KindString:
 		return "", &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "contract_version must be a string"}
-	case !slices.Contains(versions, value.Text) || (value.Text != ContractV1 && value.Text != ContractV2):
+	case !slices.Contains(versions, value.Text) || value.Text != ContractV2:
 		return "", &strictjson.Issue{
 			Path:    path,
 			Code:    CodeUnsupportedContractVersion,
@@ -124,21 +124,10 @@ func checkContractVersion(root *strictjson.Value, versions []string) (string, *s
 	return value.Text, nil
 }
 
-// decoder walks a parsed document and collects issues. v2 selects the
-// pix-payer-input-v2 structure.
+// decoder walks a parsed document and collects issues.
 type decoder struct {
 	strictjson.Validator
-	v2    bool
 	asOfs []timedMember
-}
-
-// members returns the members of an object: those of version 1, plus those
-// that version 2 adds when decoding version 2.
-func (d *decoder) members(v1 []string, v2 ...string) []string {
-	if d.v2 {
-		return append(v1, v2...)
-	}
-	return v1
 }
 
 // timedMember is a valid as_of value and its path.
@@ -200,9 +189,9 @@ func (d *decoder) scoringInput(root *strictjson.Value) ScoringInput {
 }
 
 func (d *decoder) pixPayment(root *strictjson.Value) PixPayment {
-	object, path := d.ObjectMember("", root, "pix_payment", false, d.members(
-		[]string{"amount_cents", "payer_device_usage", "recipient_key_usage", "recipient_person_type"},
-		"reference_time_offset", "payer_limit_period")...)
+	object, path := d.ObjectMember("", root, "pix_payment", false,
+		"amount_cents", "payer_device_usage", "recipient_key_usage", "recipient_person_type",
+		"reference_time_offset", "payer_limit_period")
 	if object == nil {
 		return PixPayment{}
 	}
@@ -217,12 +206,9 @@ func (d *decoder) pixPayment(root *strictjson.Value) PixPayment {
 			string(PixKey), string(NoPixKey))),
 		RecipientPersonType: PersonType(d.Enum(path, object, "recipient_person_type",
 			string(NaturalPerson), string(LegalPerson))),
-	}
-
-	if d.v2 {
-		payment.ReferenceTimeOffsetMinutes = d.referenceTimeOffset(path, object)
-		payment.PayerLimitPeriod = LimitPeriod(d.Enum(path, object, "payer_limit_period",
-			string(Daytime), string(Nighttime), string(Daily), string(NoPeriodLimit)))
+		ReferenceTimeOffsetMinutes: d.referenceTimeOffset(path, object),
+		PayerLimitPeriod: LimitPeriod(d.Enum(path, object, "payer_limit_period",
+			string(Daytime), string(Nighttime), string(Daily), string(NoPeriodLimit))),
 	}
 
 	return payment
@@ -334,42 +320,32 @@ func conditionalMember[T any](
 }
 
 func (d *decoder) payerAccount(path string, parent *strictjson.Value, payment PixPayment) PayerAccount {
-	object, subjectPath := d.ObjectMember(path, parent, "payer_account", false, d.members(
-		[]string{"settled_outgoing_pix_90d", "initiated_outgoing_pix_24h"}, "period_limit")...)
+	object, subjectPath := d.ObjectMember(path, parent, "payer_account", false,
+		"settled_outgoing_pix_90d", "initiated_outgoing_pix_24h", "period_limit")
 	if object == nil {
 		return PayerAccount{}
 	}
 
-	account := PayerAccount{
+	return PayerAccount{
 		SettledOutgoingPix90d:   d.settledHistory(subjectPath, object, "settled_outgoing_pix_90d"),
 		InitiatedOutgoingPix24h: d.countObservation(subjectPath, object, "initiated_outgoing_pix_24h"),
-	}
-
-	if d.v2 {
-		account.PeriodLimit = conditionalMember(d, subjectPath, object, "period_limit",
+		PeriodLimit: conditionalMember(d, subjectPath, object, "period_limit",
 			"payer_limit_period", string(payment.PayerLimitPeriod), payment.PayerLimitPeriod != NoPeriodLimit,
-			d.periodLimit)
+			d.periodLimit),
 	}
-
-	return account
 }
 
 func (d *decoder) payerDevice(path string, parent *strictjson.Value) *PayerDeviceSubject {
-	object, subjectPath := d.ObjectMember(path, parent, "payer_device", false, d.members(
-		[]string{"settled_outgoing_pix_90d"}, "registration")...)
+	object, subjectPath := d.ObjectMember(path, parent, "payer_device", false,
+		"settled_outgoing_pix_90d", "registration")
 	if object == nil {
 		return nil
 	}
 
-	device := &PayerDeviceSubject{
+	return &PayerDeviceSubject{
 		SettledOutgoingPix90d: d.countObservation(subjectPath, object, "settled_outgoing_pix_90d"),
+		Registration:          d.registration(subjectPath, object, "registration"),
 	}
-
-	if d.v2 {
-		device.Registration = d.registration(subjectPath, object, "registration")
-	}
-
-	return device
 }
 
 func (d *decoder) periodLimit(path string, parent *strictjson.Value) *PeriodLimit {
@@ -420,19 +396,16 @@ func (d *decoder) recipientPerson(path string, parent *strictjson.Value) Recipie
 }
 
 func (d *decoder) recipientAccount(path string, parent *strictjson.Value) RecipientAccount {
-	object, subjectPath := d.ObjectMember(path, parent, "recipient_account", false, d.members(
-		[]string{"entry"}, "pre_registration")...)
+	object, subjectPath := d.ObjectMember(path, parent, "recipient_account", false,
+		"entry", "pre_registration")
 	if object == nil {
 		return RecipientAccount{}
 	}
 
-	account := RecipientAccount{Entry: d.accountEntry(subjectPath, object)}
-
-	if d.v2 {
-		account.PreRegistration = d.registration(subjectPath, object, "pre_registration")
+	return RecipientAccount{
+		Entry:           d.accountEntry(subjectPath, object),
+		PreRegistration: d.registration(subjectPath, object, "pre_registration"),
 	}
-
-	return account
 }
 
 func (d *decoder) recipientPixKey(path string, parent *strictjson.Value) *RecipientPixKey {

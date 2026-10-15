@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const examplesDir = "../docs/contracts/examples"
+const examplesDir = "../docs/contracts/examples-v2"
 
 func readExample(t *testing.T, name string) []byte {
 	t.Helper()
@@ -55,12 +55,12 @@ func assertWindow(t *testing.T, name string, got *WindowCounter, d90, m12, m60 i
 }
 
 func TestDecodeCompleteExample(t *testing.T) {
-	input, err := Decode(readExample(t, "01-complete.json"), ContractV1)
+	input, err := Decode(readExample(t, "01-complete.json"), ContractV2)
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
 
-	if input.ContractVersion != "pix-payer-input-v1" {
+	if input.ContractVersion != "pix-payer-input-v2" {
 		t.Errorf("ContractVersion = %q", input.ContractVersion)
 	}
 

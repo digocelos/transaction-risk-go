@@ -1,9 +1,0 @@
-{
-  "status": "invalid_input",
-  "issues": [
-    {
-      "path": "/observations/recipient_pix_key/entry/key_ownership_date",
-      "code": "key_ownership_after_creation"
-    }
-  ]
-}

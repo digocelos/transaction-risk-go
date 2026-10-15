@@ -1,9 +1,0 @@
-{
-  "status": "invalid_input",
-  "issues": [
-    {
-      "path": "/observations/recipient_pix_key",
-      "code": "member_not_allowed"
-    }
-  ]
-}

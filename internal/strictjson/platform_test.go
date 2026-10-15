@@ -13,7 +13,7 @@ func TestThirtyTwoBitPlatformsDoNotBuild(t *testing.T) {
 		t.Skip("builds the package for 386")
 	}
 
-	command := exec.Command("go", "build", ".")
+	command := exec.Command("go", "build", "-buildvcs=false", ".")
 	command.Env = append(os.Environ(), "GOOS=linux", "GOARCH=386", "CGO_ENABLED=0")
 	output, err := command.CombinedOutput()
 

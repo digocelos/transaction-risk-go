@@ -270,7 +270,7 @@ func TestScoreRejectsOtherDocuments(t *testing.T) {
 		path     string
 		code     string
 	}{
-		{"version 1", read(t, "../docs/contracts/examples/01-complete.json"), "/contract_version", "unsupported_contract_version"},
+		{"version 1", read(t, filepath.Join(examplesDir, "20-invalid-unsupported-version.json")), "/contract_version", "unsupported_contract_version"},
 		{"outcome", withMember("outcome", `{"label": "fraud"}`), "/outcome", "unknown_member"},
 		{"group key", withMember("group_key", `"g-7c1e9a"`), "/group_key", "unknown_member"},
 		{"training example", bytes.SplitN(read(t, fixture), []byte("\n"), 2)[0], "/contract_version", "required"},
@@ -313,7 +313,7 @@ func TestNewRejectsInvalidArtifacts(t *testing.T) {
 		"truncated":               model[:len(model)/2],
 		"changed weight":          weights,
 		"another version":         version,
-		"educational model.json":  read(t, "../model.json"),
+		"retired model format":    []byte(`{"format_version": 1, "feature_schema": "transaction-features-v1", "activation": "sigmoid", "input_size": 4, "layers": []}`),
 		"training dataset record": bytes.SplitN(read(t, fixture), []byte("\n"), 2)[0],
 	}
 

@@ -1,16 +1,13 @@
 // Package pixinput decodes and validates scoring inputs for payer-side Pix
-// analysis, as defined by the pix-payer-input-v1 and pix-payer-input-v2
-// input contracts.
+// analysis, as defined by the pix-payer-input-v2 input contract.
 package pixinput
 
 import "time"
 
-// Contract versions this package supports. Callers state which versions
-// they accept; version 2 replaces version 1 once every consumer migrates.
-const (
-	ContractV1 = "pix-payer-input-v1"
-	ContractV2 = "pix-payer-input-v2"
-)
+// ContractV2 is the contract version this package supports. Callers state
+// which versions they accept, so a later version is never accepted
+// silently (ADR 0006).
+const ContractV2 = "pix-payer-input-v2"
 
 const (
 	// MaxDocumentSize is the largest scoring input document, in bytes.
@@ -59,8 +56,7 @@ const (
 	NotRegistered RegistrationStatus = "not_registered"
 )
 
-// ScoringInput is one valid scoring input document. Members that only
-// pix-payer-input-v2 defines are zero or nil in a version 1 input.
+// ScoringInput is one valid scoring input document.
 type ScoringInput struct {
 	ContractVersion string
 	DecisionTime    time.Time

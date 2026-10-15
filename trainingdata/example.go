@@ -1,8 +1,7 @@
 // Package trainingdata reads training datasets that follow the
-// pix-training-example-v1 or pix-training-example-v2 contract: it validates
-// and classifies every record, one line at a time, and fingerprints the
-// exact dataset bytes. The feature schema being trained decides which
-// version a dataset must use.
+// pix-training-example-v2 contract: it validates and classifies every
+// record, one line at a time, and fingerprints the exact dataset bytes. The
+// feature schema being trained decides which version a dataset must use.
 package trainingdata
 
 import (
@@ -11,14 +10,10 @@ import (
 
 	"github.com/digocelos/transaction-risk-go/pixinput"
 	"github.com/digocelos/transaction-risk-go/pixrisk"
-	"github.com/digocelos/transaction-risk-go/transaction"
 )
 
-// Training example versions this package supports.
-const (
-	TrainingExampleV1 = "pix-training-example-v1"
-	TrainingExampleV2 = "pix-training-example-v2"
-)
+// TrainingExampleV2 is the training example version this package supports.
+const TrainingExampleV2 = "pix-training-example-v2"
 
 const (
 	// MaxRecordSize is the largest record line, in bytes, excluding its LF.
@@ -124,31 +119,6 @@ var PixRiskV1 = FeatureSchema{
 		_, err := pixrisk.Prepare(input)
 
 		var insufficient *pixrisk.InsufficientInputError
-		switch {
-		case errors.As(err, &insufficient):
-			blockers := make([]Blocker, len(insufficient.Blockers))
-			for i, blocker := range insufficient.Blockers {
-				blockers[i] = Blocker{Path: blocker.Path, Reason: blocker.Reason}
-			}
-			return blockers, nil
-		case err != nil:
-			return nil, err
-		}
-
-		return nil, nil
-	},
-}
-
-// TransactionFeaturesV1 classifies pix-training-example-v1 records with
-// transaction-features-v1.
-var TransactionFeaturesV1 = FeatureSchema{
-	Name:                   transaction.FeatureSchema,
-	TrainingExampleVersion: TrainingExampleV1,
-	ContractVersion:        pixinput.ContractV1,
-	Blockers: func(input pixinput.ScoringInput) ([]Blocker, error) {
-		_, err := transaction.FromScoringInput(input)
-
-		var insufficient *transaction.InsufficientInputError
 		switch {
 		case errors.As(err, &insufficient):
 			blockers := make([]Blocker, len(insufficient.Blockers))

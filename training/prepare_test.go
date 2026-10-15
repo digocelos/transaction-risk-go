@@ -184,11 +184,12 @@ func TestPrepareDatasetValidatesBoundariesBeforeReading(t *testing.T) {
 
 // Records of another training example version are invalid.
 func TestPrepareDatasetRejectsVersion1Records(t *testing.T) {
-	v1 := read(t, "../docs/contracts/training-examples/dataset.jsonl")
+	// The fixture with every record relabeled as the retired version 1.
+	v1 := bytes.ReplaceAll(read(t, pixRiskFixture), []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`))
 	_, err := PrepareDataset(context.Background(), bytes.NewReader(v1), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var invalid *InvalidDatasetError
-	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 7 {
+	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 8 {
 		t.Errorf("PrepareDataset() error = %v, want every record invalid", err)
 	}
 }

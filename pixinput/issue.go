@@ -6,7 +6,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/internal/strictjson"
 )
 
-// Validation codes. The catalog is closed; see the pix-payer-input-v1
+// Validation codes. The catalog is closed; see the pix-payer-input-v2
 // specification for the condition behind each code.
 const (
 	CodeDocumentTooLarge           = "document_too_large"
