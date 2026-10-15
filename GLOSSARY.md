@@ -135,10 +135,6 @@ _Avoid_: Known device, trusted device
 **Device activity observation**:
 The settled Pix payments that one payer account initiated on one device within a contract-defined lookback window.
 
-**NewDevice**:
-Legacy name of the retired `transaction-features-v1` feature that marks the absence of settled Pix payments from a device in the last 90 days; it does not mean an unregistered device.
-_Avoid_: Unregistered device
-
 ## Limits and registrations
 
 **Limit period**:
@@ -268,8 +264,9 @@ _Avoid_: Sample data, test data (when real data is meant)
 **Contract version**:
 Identifies the shape and meaning of an input contract.
 
-**Model format version**:
-Identifies the layout of a saved model file, independent of the feature schema the model was trained on.
+**Artifact version**:
+Identifies the layout of a model artifact, such as `pix-risk-model-v1`; it says nothing about how good the model is or how its features are prepared, which the feature schema identifies.
+_Avoid_: Model version, model format version
 
 **Model artifact**:
 A saved trained model with everything needed to score without training: its parameters, feature descriptor, preparation state, selection, and the identities of what produced it.

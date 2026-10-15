@@ -69,4 +69,4 @@ Training never makes a model available for scoring. `cmd/promote -run DIR -outpu
 
 ## 6. Out of scope
 
-Remote model registries, signatures, and reading models in the educational model format version 1.
+Remote model registries and signatures.

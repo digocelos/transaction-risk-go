@@ -1,6 +1,6 @@
 # Training contract `pix-training-example-v2`
 
-**Status:** Normative for `pix-training-example-v2`. It replaces [`pix-training-example-v1`](pix-training-example-v1.md) (ADR 0013): the record, classification, evaluation protocol, fingerprint, and dataset report are unchanged, and records embed `pix-payer-input-v2` scoring inputs prepared for `pix-risk-v1`.
+**Status:** Normative for `pix-training-example-v2`. It replaces [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history: the record, classification, evaluation protocol, fingerprint, and dataset report are unchanged, and records embed `pix-payer-input-v2` scoring inputs prepared for `pix-risk-v1`.
 
 ## 1. Scope
 

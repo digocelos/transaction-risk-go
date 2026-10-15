@@ -1,5 +1,24 @@
 # transaction-risk-go
-An open-source Go toolkit for learning and building financial transaction fraud detection models, starting with Pix.
+
+A Go toolkit for payer-side Pix fraud scoring: it validates the information
+an integrator supplies about a Pix payment, prepares model features, trains
+and selects a neural network on historical outcomes, packages it as a
+verified artifact, evaluates it, and scores new payments with it. It never
+fetches data, enforces regulation, or decides whether a payment goes
+through: scores inform the integrator's own rules. Licensed under
+Apache-2.0, with the Go standard library only.
+
+## Software readiness is not model readiness
+
+The toolkit is verified as software: strict contracts, deterministic
+training and scoring, leakage controls, verified artifacts, resource limits,
+and an end-to-end test from a clean checkout. That says nothing about
+whether a model detects fraud. The datasets in this repository are
+synthetic and only exercise the software. A model is ready only after you
+train it on a large, representative dataset of mature labels, evaluate it
+on held-out data, and accept its precision, recall, false positives, and
+missed losses against your own risk policy; the toolkit gives you the
+measurements, not the verdict.
 
 ## Requirements
 
@@ -10,57 +29,42 @@ An open-source Go toolkit for learning and building financial transaction fraud 
 
 See [operating limits](docs/operations/operating-limits.md) for the
 supported dataset sizes, memory, training time, and file sizes, measured on
-reference hardware.
+reference hardware. Run all commands from the repository root. Every
+command takes its model and data paths explicitly.
 
-Run all commands from the repository root. Every command takes its model
-and data paths explicitly; only the educational `cmd/demo` writes
-`model.json` in the current directory.
+## Quick start
 
-## Training the model (`cmd/demo`)
+From a clean checkout, with a synthetic dataset and a temporary directory;
+`internal/e2e` runs the same steps in CI:
 
 ```bash
-go run ./cmd/demo
+work=$(mktemp -d)
+go run ./cmd/synthesize -records 3000 -seed 1 > "$work/data.jsonl"
+go run ./cmd/train -config docs/operations/benchmark-config.json \
+  -dataset "$work/data.jsonl" -run-dir "$work/run"
+go run ./cmd/promote -run "$work/run" -output "$work/model.json"
+go run ./cmd/evaluate -model "$work/model.json" -dataset "$work/data.jsonl" \
+  -partition test -output "$work/evaluation.json"
+go run ./cmd/predict -model "$work/model.json" docs/contracts/examples-v2/01-complete.json
 ```
 
-The demo:
+`evaluate` exits with 3 when the evaluation is incomplete, for example when
+a test fraud has an unknown loss; the report is still written.
 
-1. Builds 8 fictional labeled transactions (4 legitimate, 4 fraudulent) and
-   converts each one into a feature vector with `transaction.Features`.
-2. Creates a 4-4-1 network (4 inputs, 4 hidden neurons, 1 output) with
-   seed `42`, so every run starts from the same weights.
-3. Prints the scores of the untrained network.
-4. Trains for 5000 epochs with learning rate `1.0`, printing the loss
-   every 500 epochs.
-5. Prints the scores after training, then evaluates 4 examples that were
-   never used in training. A score `>= 0.5` is predicted as fraud (`1`).
-6. Saves the trained network to `model.json`, overwriting the existing file.
+## Workflow
 
-`model.json` uses the educational model format. No other command reads it:
-`predict` scores with a model artifact from `train` and `promote`. The demo
-and its model stay only as a learning aid until they are retired.
+The toolkit follows one path, configure → train and select → package →
+evaluate → load and score, and each step reads and writes versioned files:
 
-Expected output (abridged):
+| Step | Command | Reads | Writes |
+|---|---|---|---|
+| Configure | | | a [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) file |
+| Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v1.md#3-training-run) with the [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
+| Package | `promote` | a run | the verified artifact, where your scorer reads it |
+| Evaluate | `evaluate` | an artifact and a dataset | a [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) report |
+| Load and score | `predict`, `scoring` | an artifact and a [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input | a score |
 
-```
-Epoch    0 | Loss: 0.279745
-Epoch  500 | Loss: 0.005225
-...
-Epoch 4500 | Loss: 0.000217
-
-Evaluation on unseen examples:
-Example 1 | Score: 0.0009 | Prediction: 0 | Target: 0 | Correct: true
-Example 2 | Score: 0.1873 | Prediction: 0 | Target: 0 | Correct: true
-Example 3 | Score: 0.9962 | Prediction: 1 | Target: 1 | Correct: true
-Example 4 | Score: 0.9907 | Prediction: 1 | Target: 1 | Correct: true
-
-Model saved to model.json
-```
-
-To experiment, edit `transactions`, `targets`, the hidden layer size, the
-number of epochs or the learning rate in `cmd/demo/main.go`, then run the
-demo again.
-
-## Generating a synthetic dataset (`cmd/synthesize`)
+### Data: synthetic datasets (`cmd/synthesize`)
 
 `synthesize` writes a synthetic `pix-training-example-v2` dataset of any
 size, to try the toolkit or measure it without real data:
@@ -81,7 +85,7 @@ detects nothing, and its metrics mean nothing.
 [`docs/operations/benchmark-config.json`](docs/operations/benchmark-config.json)
 is a configuration whose boundaries fit it.
 
-## Training from a dataset (`cmd/train`)
+### 1–2. Configure, train, and select (`cmd/train`)
 
 `train` trains a network from a dataset that follows the
 [`pix-training-example-v2` training contract](docs/contracts/pix-training-example-v2.md):
@@ -192,7 +196,7 @@ a newline:
 | 3 | `selection_infeasible` | No threshold keeps the validation false positive rate within the configured limit. The object holds `threshold_policy`, `max_false_positive_rate`, and `lowest_achievable_false_positive_rate`. Nothing is written. |
 | 1 | none | Operational failure, such as a missing flag, an invalid configuration, an existing run directory, an unreadable dataset, a dataset or run beyond the limits, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
 
-## Promoting a model (`cmd/promote`)
+### 3. Package and promote (`cmd/promote`)
 
 A finished run is not an accepted model. After reviewing its report,
 promote its artifact to the place your scorer reads it from:
@@ -210,7 +214,7 @@ output is replaced only with `-replace`. Any failure exits with code 1 and
 writes nothing. The SHA-256 values detect changed files; they are not
 signatures and do not show who produced a model.
 
-## Evaluating a saved model (`cmd/evaluate`)
+### 4. Evaluate (`cmd/evaluate`)
 
 `evaluate` measures a model artifact on one scope of a
 `pix-training-example-v2` dataset and writes an evaluation report
@@ -282,7 +286,7 @@ again: if you change a model after seeing its results there, that data has
 become validation data, and the changed model needs new held-out data
 ([ADR 0017](docs/adr/0017-saved-models-are-evaluated-read-only-on-an-explicit-scope.md)).
 
-## Scoring a Pix payment (`cmd/predict`)
+### 5. Load and score (`cmd/predict`, `scoring`)
 
 `predict` scores one scoring input: a JSON document that follows the
 [`pix-payer-input-v2` input contract](docs/contracts/pix-payer-input-v2.md).
@@ -338,7 +342,7 @@ reported in `notes`, never replaced by an invented value.
 [`docs/contracts/examples-v2/`](docs/contracts/examples-v2/) holds 20
 scoring inputs, each with its expected preparation result.
 
-### From Go (`scoring`)
+#### From Go (`scoring`)
 
 A Go program loads the artifact once and scores any number of documents,
 from any number of goroutines:
@@ -373,8 +377,8 @@ artifact from the synthetic training fixture.
 
 Successful training is not production validation. The commands show that
 a dataset can be trained, evaluated, and scored reproducibly; they do not
-show that the model detects fraud. The bundled dataset is synthetic and far too small
-for its metrics to mean anything. Before relying on a model, evaluate it on
+show that the model detects fraud. The bundled datasets are synthetic, and
+their metrics mean nothing. Before relying on a model, evaluate it on
 a large, representative dataset of mature labels, and review its
 precision, recall, false positives, and missed losses against your own risk
 policy.
@@ -395,15 +399,56 @@ policy.
   amd64, scores can differ in their last bits; the toolkit tests that they
   agree within 10^−9.
 
-## Version 2 contracts and `pix-risk-v1`
+## Versions
 
-[`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) and
-[`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md)
-replace the version 1 contracts, and the feature schema
-[`pix-risk-v1`](docs/features/pix-risk-v1.md) replaces
-`transaction-features-v1`. It scores new accounts and payments without a
-Pix key, payer device, or limit per period, marking unavailable information
-with explicit indicators instead of refusing to score. The `pixrisk`
-package prepares its 62 features and fits their standardization on the
-train partition only. `cmd/train`, `cmd/evaluate`, and `cmd/predict` use
-version 2; no command accepts version 1 any more.
+Every identifier changes for its own reasons (ADR 0003), and a file never
+claims more than its identifier says:
+
+| Identifier | What it identifies |
+|---|---|
+| [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) | The scoring input an integrator supplies. |
+| [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) | A training record: a scoring input with its outcome. |
+| [`pix-risk-v1`](docs/features/pix-risk-v1.md) | The feature schema: the 62 ordered features, how they are prepared, and the layout of the fitted preparation state. |
+| [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) | A training configuration; its canonical SHA-256 identifies it. |
+| [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) | The report of a training run. |
+| [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) | The layout of a model artifact. |
+| [`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run) | The layout of a published run and its manifest. |
+| [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) | The report of an independent evaluation. |
+
+The artifact version is the format of the file, not the model: two
+`pix-risk-model-v1` artifacts can hold models of very different quality,
+trained on different data. How features are generated is the feature
+schema's, recorded inside the artifact; what produced a model is identified
+by the SHA-256 of its configuration, dataset, and report, and the artifact
+itself by the SHA-256 of its bytes.
+
+## Migrating from the educational version 1
+
+The first version of this repository was an educational workflow: a demo
+that trained a four-feature network on fictional data, a committed
+`model.json`, and `predict` reading it. It is removed, with no
+compatibility (ADR 0013, ADR 0020):
+
+- `cmd/demo`, the committed `model.json`, the `transaction` package, and the
+  `nn` model format version 1 are gone. `predict` requires `-model` and an
+  artifact from `train` and `promote`.
+- `pix-payer-input-v1`, `pix-training-example-v1`, and
+  `transaction-features-v1` are no longer accepted. Version 1 documents are
+  invalid with `unsupported_contract_version` or
+  `unsupported_training_example_version`. Move inputs to
+  `pix-payer-input-v2` with its
+  [migration notes](docs/contracts/pix-payer-input-v2.md#18-migration-notes),
+  and retrain.
+- The version 1 documents remain in the repository history, at commit
+  [`6babe7c`](https://github.com/digocelos/transaction-risk-go/tree/6babe7c124a26d1c2426ef4b55b2b6c338724b5d).
+
+## Documentation
+
+- [`docs/contracts/`](docs/contracts/): the normative contracts and their
+  examples.
+- [`docs/features/pix-risk-v1.md`](docs/features/pix-risk-v1.md): the
+  feature schema.
+- [`docs/adr/`](docs/adr/): the architecture decisions.
+- [`docs/operations/`](docs/operations/): operating limits and
+  measurements.
+- [`GLOSSARY.md`](GLOSSARY.md): the domain vocabulary.

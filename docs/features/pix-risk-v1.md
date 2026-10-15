@@ -1,6 +1,6 @@
 # Feature schema `pix-risk-v1`
 
-**Status:** Specification, implemented by the `pixrisk` package and used by `cmd/train`, `cmd/evaluate`, `cmd/predict`, and the `scoring` package.
+**Status:** Specification, implemented by the `pixrisk` package and used by `cmd/train`, `cmd/evaluate`, `cmd/predict`, and the `scoring` package. The version 1 contracts this document describes changes from were removed with the educational workflow (ADR 0020); they remain in the repository history: [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) and [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md).
 
 ## 1. Scope
 
@@ -122,7 +122,7 @@ A pre-registered recipient is context for the model, not a guarantee of legitima
 
 ### 5.3 Conditional presence
 
-[`pix-payer-input-v1` §6.5](../contracts/pix-payer-input-v1.md#65-conditional-subjects) gains one row. The same rules apply: an omitted member is not applicable, and a present one with `null` is missing.
+[`pix-payer-input-v1` §6.5](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md#65-conditional-subjects) gains one row, as [`pix-payer-input-v2` §6.5](../contracts/pix-payer-input-v2.md#65-conditional-subjects) states. The same rules apply: an omitted member is not applicable, and a present one with `null` is missing.
 
 | Discriminator | Value | Member | Rule |
 |---|---|---|---|
@@ -469,7 +469,7 @@ Support means the software produces a vector for these payments. It says nothing
 }
 ```
 
-The elided groups are exactly those of [`pix-payer-input-v1` example 01](../contracts/examples/01-complete.json); the full file is [`examples-v2/01-complete.json`](../contracts/examples-v2/01-complete.json), and every variant below has its own file and expected outcome in that directory. Every source is known and fresh, so preparation returns 62 values and no notes. Values before standardization, rounded to six decimals for presentation; golden tests fix the exact binary64 values:
+The elided groups are exactly those of [`pix-payer-input-v1` example 01](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/examples/01-complete.json); the full file is [`examples-v2/01-complete.json`](../contracts/examples-v2/01-complete.json), and every variant below has its own file and expected outcome in that directory. Every source is known and fresh, so preparation returns 62 values and no notes. Values before standardization, rounded to six decimals for presentation; golden tests fix the exact binary64 values:
 
 | # | Name | Value | # | Name | Value |
 |---|---|---|---|---|---|
@@ -556,3 +556,5 @@ No compatibility with the v1 workflow is kept once the migration ends (ADR 0013)
 3. A new artifact format carries the preparation state (#29). Models trained on `transaction-features-v1`, including the committed `model.json`, cannot score `pix-risk-v1` inputs.
 4. `cmd/predict` requires an explicit model path, reads `pix-payer-input-v2`, and reports `pix-risk-v1` (#31).
 5. `pix-payer-input-v1`, `pix-training-example-v1`, `transaction-features-v1`, `cmd/demo`, and `model.json` are removed (#33), after which the toolkit accepts version 2 only.
+
+The migration is complete.

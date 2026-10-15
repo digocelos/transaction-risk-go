@@ -1,14 +1,23 @@
 # transaction-risk-go
 
-Go toolkit for learning and building financial transaction fraud detection models, starting with Pix. See `README.md` for usage.
+Go toolkit for payer-side Pix fraud scoring: validate inputs, prepare features, train and select, package, evaluate, and score. See `README.md` for usage and `docs/` for the contracts, the feature schema, the ADRs, and the operating limits.
 
 ## Layout
 
-- `transaction/`: transaction model and feature extraction (`FeatureSchema`).
-- `nn/`: dense neural network, training, and JSON persistence.
-- `cmd/demo`: trains on fictional data and writes `model.json`.
-- `cmd/predict`: scores one `pix-payer-input-v2` input with the artifact given by `-model`, through the `scoring` package.
-- `cmd/synthesize`: writes synthetic datasets for measuring the toolkit; see `docs/operations/operating-limits.md`.
+Workflow packages, in the order a model moves through them:
+
+- `pixinput/`: decodes and validates `pix-payer-input-v2` scoring inputs.
+- `pixrisk/`: the `pix-risk-v1` feature schema: preparation, fitted standardization, coverage.
+- `trainingdata/`: reads and classifies `pix-training-example-v2` datasets.
+- `trainingconfig/`: decodes `pix-training-config-v2` configurations.
+- `evaluation/`: temporal partitions, metrics, threshold selection.
+- `nn/`: the dense network and full-batch gradient descent.
+- `training/`: runs training, selection, and limits; writes `trainingreport` reports.
+- `modelartifact/`, `trainingrun/`: the `pix-risk-model-v1` artifact and published runs.
+- `modelevaluation/`: independent evaluation of saved artifacts.
+- `scoring/`: loads an artifact once and scores inputs.
+- `internal/`: strict JSON, synthetic datasets, and the end-to-end test.
+- `cmd/`: `synthesize`, `train`, `promote`, `evaluate`, `predict`.
 
 ## Commands
 
@@ -26,7 +35,8 @@ gofmt -l .
 - **Language**: write code, comments, documentation, error messages, tests, commit messages, and issue and PR content in English. Explain things to the user in Portuguese.
 - **License**: the project is Apache-2.0. Keep `LICENSE` unchanged. Add only dependencies with Apache-2.0-compatible licenses.
 - **Dependencies**: the module uses the standard library only. Adding an external dependency is an architectural decision; record it in `docs/adr/`.
-- **Model compatibility**: if feature order or scaling in `transaction/features.go` changes, bump `FeatureSchema` and regenerate `model.json` with `go run ./cmd/demo`.
+- **Versions**: contracts, the feature schema, the training configuration, reports, and the artifact each have their own version (ADR 0003). Any change to what a version accepts or produces, including feature order or preparation, is a new version with its own specification; never change a released version in place (ADR 0006).
+- **Data**: no real payment data, credentials, or production artifacts in the repository. Tests and examples use synthetic data and generate their artifacts.
 
 ## Incremental development
 
