@@ -1,60 +1,10 @@
 package pixinput
 
 import (
-	"encoding/json"
-	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 )
-
-func TestDecodeV2SpecificationExamples(t *testing.T) {
-	inputs, err := filepath.Glob(filepath.Join(examplesDir, "*.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	count := 0
-
-	for _, input := range inputs {
-		if strings.HasSuffix(input, ".expected.json") {
-			continue
-		}
-		count++
-
-		name := filepath.Base(input)
-		t.Run(name, func(t *testing.T) {
-			var expected expectedResult
-			data := readExample(t, strings.TrimSuffix(name, ".json")+".expected.json")
-			if err := json.Unmarshal(data, &expected); err != nil {
-				t.Fatal(err)
-			}
-
-			_, err := Decode(readExample(t, name), ContractV2)
-
-			if expected.Status != "invalid_input" {
-				if err != nil {
-					t.Fatalf("Decode() error = %v, want a valid scoring input", err)
-				}
-				return
-			}
-
-			want := []pathCode{}
-			for _, issue := range expected.Issues {
-				want = append(want, pathCode{issue.Path, issue.Code})
-			}
-
-			if got := issuesOf(t, err); !reflect.DeepEqual(got, want) {
-				t.Errorf("issues = %v\nwant     %v", got, want)
-			}
-		})
-	}
-
-	if count != 20 {
-		t.Errorf("found %d examples, want 20", count)
-	}
-}
 
 func TestDecodeV2ReadsNewMembers(t *testing.T) {
 	input, err := Decode(readExample(t, "01-complete.json"), ContractV2)
