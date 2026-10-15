@@ -74,7 +74,7 @@ func buildReport(t *testing.T, cfg trainingconfig.Config) Report {
 	prepared := map[evaluation.Partition][]pixrisk.Prepared{}
 	var exclusions []trainingdata.Exclusion
 
-	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.PixRiskV1,
+	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.PixRiskV1, trainingdata.DefaultMaxRecords,
 		func(record trainingdata.Record) error {
 			if exclusion, ok := record.Exclusion(); ok {
 				exclusions = append(exclusions, exclusion)

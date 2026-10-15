@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -183,7 +184,7 @@ func Publish(dir string, bundle Bundle) error {
 func Verify(dir string) (Run, error) {
 	run := Run{Dir: dir}
 
-	manifestData, err := os.ReadFile(filepath.Join(dir, ManifestFile))
+	manifestData, err := readBounded(filepath.Join(dir, ManifestFile), maxManifestSize)
 	if err != nil {
 		return Run{}, fmt.Errorf("read manifest: %w", err)
 	}
@@ -219,7 +220,13 @@ func Verify(dir string) (Run, error) {
 			return Run{}, fmt.Errorf("manifest entry %d is %q, want %q", i, file.Path, want)
 		}
 
-		data, err := os.ReadFile(filepath.Join(dir, file.Path))
+		if limit, ok := maxFileSizes[file.Path]; ok && file.Bytes > limit {
+			return Run{}, fmt.Errorf("%s declares %d bytes, above the limit of %d", file.Path, file.Bytes, limit)
+		}
+
+		// Reading one byte past the declared size detects a longer file
+		// without reading the rest of it.
+		data, err := readBounded(filepath.Join(dir, file.Path), max(file.Bytes, 0)+1)
 		if err != nil {
 			return Run{}, err
 		}
@@ -338,6 +345,28 @@ func Promote(runDir, output string, replace bool) (string, error) {
 
 	syncDir(filepath.Dir(output))
 	return sha256Hex(run.Bundle.Model), nil
+}
+
+// maxManifestSize bounds the manifest, which lists three files.
+const maxManifestSize = 64 << 10
+
+// maxFileSizes bound the files whose size does not grow with the dataset.
+// The report grows with the records of the dataset, so the record limit of
+// the run that wrote it bounds it.
+var maxFileSizes = map[string]int64{
+	ModelFile:  modelartifact.MaxArtifactSize,
+	ConfigFile: trainingconfig.MaxDocumentSize,
+}
+
+// readBounded reads at most limit bytes of a file.
+func readBounded(path string, limit int64) ([]byte, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	return io.ReadAll(io.LimitReader(file, limit))
 }
 
 // writeSynced writes a new file and syncs it before closing.

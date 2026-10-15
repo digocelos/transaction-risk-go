@@ -51,7 +51,7 @@ func publish(t *testing.T, seed int64) string {
 		t.Fatal(err)
 	}
 
-	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

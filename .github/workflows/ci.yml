@@ -11,9 +11,14 @@ permissions:
 
 jobs:
   quality-gates:
-    name: Quality gates
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    name: Quality gates (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # The supported platforms: linux/amd64 and darwin/arm64.
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -41,6 +46,11 @@ jobs:
 
       - name: Race detector on shared scoring
         run: go test -race ./scoring/ ./cmd/predict/
+
+      # Benchmarks run once at their smallest sizes, so they keep working;
+      # CI never asserts timings.
+      - name: Benchmarks compile and run
+        run: go test -run '^$' -bench . -benchtime 1x -short ./...
 
       - name: Build
         run: go build ./...

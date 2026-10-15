@@ -600,3 +600,44 @@ func TestTrainRejectsAValidationPartitionTheSelectionCannotUse(t *testing.T) {
 		t.Errorf("output directory = %v, want no artifact", got)
 	}
 }
+
+// Resource limits refuse a run before anything is written: a dataset with
+// more records than -max-records while it is read, and a run with more
+// training work than -max-training-work before training.
+func TestTrainEnforcesResourceLimits(t *testing.T) {
+	cases := []struct {
+		name  string
+		flags map[string]string
+		want  string
+	}{
+		{"records", map[string]string{"max-records": "7"}, "more than 7 records, the configured limit"},
+		{"work", map[string]string{"max-training-work": "1000"}, "units of training work, above the configured limit of 1000"},
+		{"no records", map[string]string{"max-records": "0"}, "record limit must be at least 1"},
+		{"no work", map[string]string{"max-training-work": "-1"}, "training work limit must be at least 1"},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			dir := t.TempDir()
+			f := flags(dir)
+			for name, value := range c.flags {
+				f[name] = value
+			}
+
+			r := train(t, args(f)...)
+			if r.code != 1 || r.stdout != "" || !strings.Contains(r.stderr, c.want) {
+				t.Errorf("exit code %d, stdout %q, stderr:\n%s", r.code, r.stdout, r.stderr)
+			}
+			if got := entries(t, dir); len(got) != 0 {
+				t.Errorf("directory holds %v, want nothing", got)
+			}
+		})
+	}
+
+	dir := t.TempDir()
+	f := flags(dir)
+	f["max-records"] = "8"
+	if r := train(t, args(f)...); r.code != 0 {
+		t.Errorf("at the record limit: exit code %d, stderr:\n%s", r.code, r.stderr)
+	}
+}

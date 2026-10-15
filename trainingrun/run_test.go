@@ -43,7 +43,7 @@ func newBundle(t *testing.T, seed int64) Bundle {
 		t.Fatal(err)
 	}
 
-	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, nil)
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -396,5 +396,40 @@ func TestPromoteLeavesNothingBehindOnFailure(t *testing.T) {
 
 	if got := names(t, parent); len(got) != 0 {
 		t.Errorf("target directory = %v, want nothing written", got)
+	}
+}
+
+// A manifest that declares a model or configuration above its size limit
+// is refused before the file is read, and a file longer than its manifest
+// entry is never read past that entry.
+func TestVerifyBoundsWhatItReads(t *testing.T) {
+	declare := func(index int, bytes int64) func(dir string) {
+		return func(dir string) {
+			manifest, _ := os.ReadFile(filepath.Join(dir, ManifestFile))
+			var value Manifest
+			json.Unmarshal(manifest, &value)
+			value.Files[index].Bytes = bytes
+			data, _ := json.Marshal(value)
+			os.WriteFile(filepath.Join(dir, ManifestFile), data, 0o644)
+		}
+	}
+
+	tests := map[string]struct {
+		dir  string
+		want string
+	}{
+		"model above the limit":  {rewrite(t, declare(0, modelartifact.MaxArtifactSize+1), false), "above the limit"},
+		"config above the limit": {rewrite(t, declare(2, trainingconfig.MaxDocumentSize+1), false), "above the limit"},
+		"longer report": {rewrite(t, func(dir string) {
+			f, _ := os.OpenFile(filepath.Join(dir, ReportFile), os.O_APPEND|os.O_WRONLY, 0)
+			f.Write([]byte("  "))
+			f.Close()
+		}, false), "does not match its manifest entry"},
+	}
+
+	for name, test := range tests {
+		if _, err := Verify(test.dir); err == nil || !strings.Contains(err.Error(), test.want) {
+			t.Errorf("%s: Verify() error = %v, want %q", name, err, test.want)
+		}
 	}
 }

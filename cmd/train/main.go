@@ -54,13 +54,16 @@ type invalidOutput struct {
 }
 
 const usage = `usage: train -config FILE -dataset FILE -run-dir DIR
+             [-max-records N] [-max-training-work N]
 
 Trains the network a pix-training-config-v2 configuration describes on the
 train partition of a pix-training-example-v2 dataset, prepared with
 pix-risk-v1, selects it on the validation partition, and publishes a run
 directory: the pix-risk-model-v1 artifact, the training report, the
 canonical configuration, and a manifest. DIR must not exist. Training
-never promotes a model; see promote. Every flag is required.
+never promotes a model; see promote. -config, -dataset, and -run-dir are
+required. The limits refuse a dataset or a run beyond the supported
+envelope; see docs/operations/operating-limits.md before raising them.
 `
 
 func main() {
@@ -73,6 +76,7 @@ func main() {
 // options are the parsed command-line flags.
 type options struct {
 	config, dataset, runDir string
+	limits                  training.Limits
 }
 
 // run trains a model from the flags in args. The result goes to stdout as
@@ -118,7 +122,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	result, err := training.Run(ctx, file, config, progress)
+	result, err := training.Run(ctx, file, config, opts.limits, progress)
 
 	var invalid *training.InvalidDatasetError
 	var untrainable *training.UntrainableError
@@ -226,6 +230,10 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs.StringVar(&opts.config, "config", "", "pix-training-config-v2 configuration `file`")
 	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
 	fs.StringVar(&opts.runDir, "run-dir", "", "run `directory` to publish; it must not exist")
+	fs.IntVar(&opts.limits.MaxRecords, "max-records", training.DefaultLimits.MaxRecords,
+		"refuse datasets with more `records`")
+	fs.Int64Var(&opts.limits.MaxTrainingWork, "max-training-work", training.DefaultLimits.MaxTrainingWork,
+		"refuse runs with more training `work`: parameters × (train records × max_epochs + validation records × evaluations)")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err
@@ -239,11 +247,11 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
 
 	var missing []string
-	fs.VisitAll(func(f *flag.Flag) {
-		if !set[f.Name] {
-			missing = append(missing, "-"+f.Name)
+	for _, name := range []string{"config", "dataset", "run-dir"} {
+		if !set[name] {
+			missing = append(missing, "-"+name)
 		}
-	})
+	}
 	if len(missing) > 0 {
 		return options{}, fmt.Errorf("missing required flags: %s", strings.Join(missing, ", "))
 	}

@@ -8,6 +8,7 @@ Go toolkit for learning and building financial transaction fraud detection model
 - `nn/`: dense neural network, training, and JSON persistence.
 - `cmd/demo`: trains on fictional data and writes `model.json`.
 - `cmd/predict`: scores one `pix-payer-input-v2` input with the artifact given by `-model`, through the `scoring` package.
+- `cmd/synthesize`: writes synthetic datasets for measuring the toolkit; see `docs/operations/operating-limits.md`.
 
 ## Commands
 

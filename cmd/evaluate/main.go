@@ -18,8 +18,10 @@ import (
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
 	"github.com/digocelos/transaction-risk-go/internal/strictjson"
+	"github.com/digocelos/transaction-risk-go/modelartifact"
 	"github.com/digocelos/transaction-risk-go/modelevaluation"
 	"github.com/digocelos/transaction-risk-go/training"
+	"github.com/digocelos/transaction-risk-go/trainingdata"
 )
 
 // Exit codes. A dataset with invalid records always uses 2, and a report
@@ -47,6 +49,7 @@ type invalidOutput struct {
 const usage = `usage: evaluate -model FILE -dataset FILE -output FILE
                 (-partition validation|test | -after TIME [-through TIME])
                 [-threshold VALUE] [-reference-dataset FILE] [-replace]
+                [-max-records N]
 
 Evaluates a pix-risk-model-v1 artifact on one scope of a
 pix-training-example-v2 dataset and writes a pix-evaluation-report-v1
@@ -57,6 +60,8 @@ model. -threshold measures at another threshold for this evaluation only,
 and the report labels it. -reference-dataset is the model's training
 dataset, used to measure group overlap when the evaluated dataset is
 another one. An existing output is replaced only with -replace.
+-max-records refuses datasets with more records; see
+docs/operations/operating-limits.md before raising it.
 
 Software cannot stop anyone from evaluating held-out data repeatedly. A
 model changed after seeing its test results needs new held-out data.
@@ -78,6 +83,7 @@ type options struct {
 	scope                             modelevaluation.Scope
 	threshold                         *float64
 	replace                           bool
+	maxRecords                        int
 }
 
 // run evaluates a model from the flags in args. The result goes to stdout
@@ -97,7 +103,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return fail("%v", err)
 	}
 
-	model, err := os.ReadFile(opts.model)
+	model, err := modelartifact.ReadFile(opts.model)
 	if err != nil {
 		return fail("%v", err)
 	}
@@ -108,7 +114,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	defer dataset.Close()
 
-	evaluationOptions := modelevaluation.Options{Scope: opts.scope, Threshold: opts.threshold}
+	evaluationOptions := modelevaluation.Options{Scope: opts.scope, Threshold: opts.threshold, MaxRecords: opts.maxRecords}
 	if opts.reference != "" {
 		reference, err := os.Open(opts.reference)
 		if err != nil {
@@ -195,6 +201,7 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	fs.Float64Var(&threshold, "threshold", 0, "threshold `value` to measure at instead of the model's")
 	fs.StringVar(&opts.reference, "reference-dataset", "", "the model's training dataset `file`, for group overlap")
 	fs.BoolVar(&opts.replace, "replace", false, "replace an existing output file")
+	fs.IntVar(&opts.maxRecords, "max-records", trainingdata.DefaultMaxRecords, "refuse datasets with more `records`")
 
 	if err := fs.Parse(args); err != nil {
 		return options{}, err

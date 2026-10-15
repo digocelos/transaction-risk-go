@@ -24,7 +24,7 @@ func scanReportWith(t *testing.T, data []byte, schema FeatureSchema) Report {
 
 	var exclusions []Exclusion
 
-	summary, err := Scan(strings.NewReader(string(data)), schema, func(record Record) error {
+	summary, err := Scan(strings.NewReader(string(data)), schema, DefaultMaxRecords, func(record Record) error {
 		if exclusion, ok := record.Exclusion(); ok {
 			exclusions = append(exclusions, exclusion)
 		}

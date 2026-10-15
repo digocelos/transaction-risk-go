@@ -13,13 +13,31 @@ import (
 // buffer are assembled in pieces, up to MaxRecordSize.
 const readBufferSize = 64 * 1024
 
+// DefaultMaxRecords is the default limit on the records of a dataset.
+const DefaultMaxRecords = 1_000_000
+
+// RecordLimitError reports a dataset with more records than the limit.
+type RecordLimitError struct {
+	Limit int
+}
+
+func (e *RecordLimitError) Error() string {
+	return fmt.Sprintf("the dataset has more than %d records, the configured limit", e.Limit)
+}
+
 // Scan reads a training dataset one line at a time, validates and
 // classifies every record, and calls visit for each record in file order.
 // Memory stays bounded by MaxRecordSize, whatever the dataset size. It
 // returns the dataset summary, including the SHA-256 of the exact bytes
 // read. A reader failure, a feature schema failure, or an error from visit
-// stops the scan and is returned.
-func Scan(r io.Reader, schema FeatureSchema, visit func(Record) error) (Summary, error) {
+// stops the scan and is returned. Every line counts as a record, and a line
+// beyond maxRecords stops the scan with a *RecordLimitError before it is
+// decoded.
+func Scan(r io.Reader, schema FeatureSchema, maxRecords int, visit func(Record) error) (Summary, error) {
+	if maxRecords < 1 {
+		return Summary{}, fmt.Errorf("the record limit must be at least 1, got %d", maxRecords)
+	}
+
 	hash := sha256.New()
 	counter := &byteCounter{}
 	reader := bufio.NewReaderSize(io.TeeReader(r, io.MultiWriter(hash, counter)), readBufferSize)
@@ -34,6 +52,10 @@ func Scan(r io.Reader, schema FeatureSchema, visit func(Record) error) (Summary,
 		}
 		if err != nil {
 			return summary, fmt.Errorf("read training dataset: %w", err)
+		}
+
+		if number > maxRecords {
+			return summary, &RecordLimitError{Limit: maxRecords}
 		}
 
 		record, err := decodeRecord(number, data, tooLarge, schema)

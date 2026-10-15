@@ -4,7 +4,13 @@ An open-source Go toolkit for learning and building financial transaction fraud 
 ## Requirements
 
 - Go 1.27 or later
+- A 64-bit platform: linux or darwin on amd64 or arm64. The toolkit does not
+  build where `int` has 32 bits.
 - No external dependencies (standard library only)
+
+See [operating limits](docs/operations/operating-limits.md) for the
+supported dataset sizes, memory, training time, and file sizes, measured on
+reference hardware.
 
 Run all commands from the repository root. Every command takes its model
 and data paths explicitly; only the educational `cmd/demo` writes
@@ -54,6 +60,27 @@ To experiment, edit `transactions`, `targets`, the hidden layer size, the
 number of epochs or the learning rate in `cmd/demo/main.go`, then run the
 demo again.
 
+## Generating a synthetic dataset (`cmd/synthesize`)
+
+`synthesize` writes a synthetic `pix-training-example-v2` dataset of any
+size, to try the toolkit or measure it without real data:
+
+```bash
+go run ./cmd/synthesize -records 100000 -seed 1 > synthetic.jsonl
+```
+
+The records are valid and in decision time order, from 2025-01-01 to
+2026-06-30, with labels known as of 2026-08-31. About 1% are fraud
+(`-fraud-rate`), and fraud shifts the amount, the payer's history with the
+recipient, the payer device, and DICT markers. The dataset has the absence
+patterns of real integrations: payments without a Pix key, payer device, or
+limit per period, missing DICT groups and windows, stale observations,
+insufficient inputs, immature labels, and unknown losses. The same flags
+always write the same bytes. The data is made up: a model trained on it
+detects nothing, and its metrics mean nothing.
+[`docs/operations/benchmark-config.json`](docs/operations/benchmark-config.json)
+is a configuration whose boundaries fit it.
+
 ## Training from a dataset (`cmd/train`)
 
 `train` trains a network from a dataset that follows the
@@ -73,7 +100,11 @@ go run ./cmd/train \
   -run-dir runs/first
 ```
 
-Every flag is required, and the parent of `-run-dir` must exist.
+`-config`, `-dataset`, and `-run-dir` are required, and the parent of
+`-run-dir` must exist. `-max-records` (default 1,000,000) and
+`-max-training-work` (default 10^12) refuse a dataset or a run beyond the
+[supported envelope](docs/operations/operating-limits.md) before anything
+is written.
 `training/testdata/pix-risk-v1.jsonl` holds 8 small
 synthetic records for trying the command, and
 [`docs/contracts/training-config-examples/`](docs/contracts/training-config-examples/)
@@ -148,8 +179,9 @@ The run is written to a staging directory, read back and verified, and
 published with a single rename, so it exists completely or not at all; an
 existing directory is never overwritten
 ([ADR 0016](docs/adr/0016-trained-models-are-published-as-verified-runs.md)).
-An interrupt (SIGINT or SIGTERM) cancels the run within one epoch, or within
-1,024 records while reading, and nothing is written. Progress, including the training loss, goes to
+An interrupt (SIGINT or SIGTERM) cancels the run within 1,024 records while
+reading or scoring and within 1,024 samples while training, and nothing is
+written. Progress, including the training loss, goes to
 standard error. Standard output holds exactly one JSON object, followed by
 a newline:
 
@@ -158,7 +190,7 @@ a newline:
 | 0 | `trained` | The run was published. The object holds `dataset_sha256`, the `records` counts, `model_sha256`, `report_sha256`, and `config_sha256`. |
 | 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, whose `exclusions` list each problem by `line`, `path`, and `code`. Standard error repeats each problem with a message. Nothing is written. |
 | 3 | `selection_infeasible` | No threshold keeps the validation false positive rate within the configured limit. The object holds `threshold_policy`, `max_false_positive_rate`, and `lowest_achievable_false_positive_rate`. Nothing is written. |
-| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an existing run directory, an unreadable dataset, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+| 1 | none | Operational failure, such as a missing flag, an invalid configuration, an existing run directory, an unreadable dataset, a dataset or run beyond the limits, a train partition without both labels, a validation partition that cannot support the selection, a diverging run, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
 
 ## Promoting a model (`cmd/promote`)
 
@@ -194,7 +226,8 @@ go run ./cmd/evaluate \
 ```
 
 `-model`, `-dataset`, and `-output` are required, and the directory of
-`-output` must exist. Choose the records with exactly one scope:
+`-output` must exist. `-max-records` (default 1,000,000) limits the records
+read from each dataset. Choose the records with exactly one scope:
 
 - `-partition validation` or `-partition test`, the partitions of the
   boundaries stored in the model;
@@ -241,7 +274,7 @@ followed by a newline:
 | 0 | `evaluated` | The report was written and is complete. The object holds `report_sha256`, `model_sha256`, `dataset_sha256`, and an empty `incomplete` list. |
 | 3 | `incomplete` | The report was written, but `incomplete` lists the reasons some metrics do not measure anything. |
 | 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, and standard error repeats each problem. Nothing is written. |
-| 1 | none | Operational failure, such as a missing flag, an invalid model, scope, or threshold, a reference dataset that is not the training dataset, an existing output, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+| 1 | none | Operational failure, such as a missing flag, an invalid model, scope, or threshold, a reference dataset that is not the training dataset, a dataset beyond the record limit, an existing output, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
 
 A complete evaluation is not a quality pass. Software also cannot stop
 anyone from evaluating the test partition, or any held-out data, again and
@@ -351,8 +384,12 @@ policy.
   configuration; the toolkit never chooses a risk policy for you, and a
   validation-selected threshold is only as reliable as the validation
   partition is representative.
-- All usable records are kept in memory, because every epoch uses the whole
-  train partition.
+- Training is full batch: every usable record stays in memory, and every
+  epoch passes the whole train partition through the network. Memory grows
+  with the records and time with the records, the parameters, and the
+  epochs, so the toolkit refuses datasets and runs beyond its
+  [supported envelope](docs/operations/operating-limits.md); larger data
+  needs mini-batch training.
 - The same dataset bytes and configuration produce the same model and
   report on the same platform. Across CPU architectures, such as arm64 and
   amd64, scores can differ in their last bits; the toolkit tests that they

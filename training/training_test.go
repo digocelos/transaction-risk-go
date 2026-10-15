@@ -52,7 +52,7 @@ func read(t *testing.T, path string) []byte {
 func run(t *testing.T, dataset []byte, config trainingconfig.Config) Result {
 	t.Helper()
 
-	result, err := Run(context.Background(), bytes.NewReader(dataset), config, nil)
+	result, err := Run(context.Background(), bytes.NewReader(dataset), config, DefaultLimits, nil)
 	if err != nil {
 		t.Fatalf("Run() error = %v", err)
 	}
@@ -238,7 +238,7 @@ func TestRunReportsTrainingLoss(t *testing.T) {
 
 	var epochs []int
 	var losses []float64
-	_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, func(epoch int, loss float64) {
+	_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, DefaultLimits, func(epoch int, loss float64) {
 		epochs = append(epochs, epoch)
 		losses = append(losses, loss)
 	})
@@ -257,7 +257,7 @@ func TestRunReportsTrainingLoss(t *testing.T) {
 
 func TestRunStopsOnInvalidRecords(t *testing.T) {
 	_, err := Run(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")),
-		config(), func(int, float64) { t.Fatal("a dataset with invalid records must not be trained") })
+		config(), DefaultLimits, func(int, float64) { t.Fatal("a dataset with invalid records must not be trained") })
 
 	var invalid *InvalidDatasetError
 	if !errors.As(err, &invalid) || invalid.Report.Records.Invalid != 2 {
@@ -278,7 +278,7 @@ func TestRunRejectsTrainPartitionsWithoutBothClasses(t *testing.T) {
 		cfg := config()
 		cfg.TrainEnd = test.trainEnd
 
-		_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, nil)
+		_, err := Run(context.Background(), bytes.NewReader(read(t, pixRiskFixture)), cfg, DefaultLimits, nil)
 
 		var untrainable *UntrainableError
 		if !errors.As(err, &untrainable) {
@@ -323,7 +323,7 @@ func TestRunRejectsInvalidConfigurationsBeforeReading(t *testing.T) {
 		cfg := config()
 		change(&cfg)
 
-		if _, err := Run(context.Background(), failingReader{t}, cfg, nil); err == nil {
+		if _, err := Run(context.Background(), failingReader{t}, cfg, DefaultLimits, nil); err == nil {
 			t.Errorf("%s: Run() error = nil, want an error", name)
 		}
 	}
@@ -352,7 +352,7 @@ func TestRunStopsWhenCanceled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	reader := &cancellingReader{data: bytes.NewReader(large), cancel: cancel}
 
-	_, err := Run(ctx, reader, config(), nil)
+	_, err := Run(ctx, reader, config(), DefaultLimits, nil)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Run() error = %v, want context.Canceled", err)
 	}
@@ -364,7 +364,7 @@ func TestRunStopsWhenCanceled(t *testing.T) {
 
 	ctx, cancel = context.WithCancel(context.Background())
 	var epochs []int
-	_, err = Run(ctx, bytes.NewReader(fixture), config(), func(epoch int, _ float64) {
+	_, err = Run(ctx, bytes.NewReader(fixture), config(), DefaultLimits, func(epoch int, _ float64) {
 		epochs = append(epochs, epoch)
 		if epoch == 9 {
 			cancel()
