@@ -1,6 +1,6 @@
 // Package evaluation splits training datasets into temporal partitions and
 // measures fraud models on scored examples, following the evaluation
-// protocol of the pix-training-example-v1 contract. It never trains a
+// protocol of the pix-training-example-v2 contract. It never trains a
 // model, reads the system clock, or splits data at random.
 package evaluation
 

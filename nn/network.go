@@ -1,3 +1,7 @@
+// Package nn implements the dense sigmoid network the toolkit trains:
+// creation from a seed, prediction, full-batch gradient descent, and the
+// layers a model artifact stores. Its parameters are saved only inside a
+// pix-risk-model-v1 artifact (package modelartifact).
 package nn
 
 import (

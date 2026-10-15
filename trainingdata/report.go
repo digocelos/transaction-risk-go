@@ -79,7 +79,7 @@ func (r Record) Exclusion() (Exclusion, bool) {
 	return exclusion, true
 }
 
-// Report is the dataset report of the pix-training-example-v1 contract.
+// Report is the dataset report of the pix-training-example-v2 contract.
 type Report struct {
 	DatasetReportVersion   string      `json:"dataset_report_version"`
 	TrainingExampleVersion string      `json:"training_example_version"`

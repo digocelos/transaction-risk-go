@@ -241,6 +241,7 @@ func TestDecodeAcceptsOnlyRequestedVersions(t *testing.T) {
 	}{
 		{"v2 as v2", v2, []string{ContractV2}, true},
 		{"retired v1", retired, []string{ContractV2}, false},
+		{"retired v1 requested by the caller", retired, []string{"pix-payer-input-v1"}, false},
 		{"no version accepted", v2, nil, false},
 	}
 
