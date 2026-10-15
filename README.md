@@ -66,6 +66,28 @@ evaluate → load and score, and each step reads and writes versioned files:
 | Evaluate | `evaluate` | an artifact and a dataset | a [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) report |
 | Load and score | `predict`, `scoring` | an artifact and a [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input | a score |
 
+### Data: your training data (`cmd/convert`)
+
+Prepare real training data in a spreadsheet from the
+[template](templates/training-data/pix-training-example-v2.csv), as its
+[guide](templates/training-data/README.md) explains, and convert it to the
+JSON Lines dataset `train` reads:
+
+```bash
+mkdir -p data
+cp templates/training-data/pix-training-example-v2.csv data/training.csv
+# fill data/training.csv, then:
+go run ./cmd/convert -input data/training.csv -output data/training.jsonl
+```
+
+`convert` validates every row as `train` would and writes the dataset only
+when every row is valid, reporting each problem by row and column; exit
+code 2 means invalid rows. `-separator ';'` reads spreadsheets that
+separate cells with semicolons. `data/` is ignored by git, so real payment
+data stays out of the repository
+([`pix-training-csv-v1`](docs/contracts/pix-training-csv-v1.md),
+[ADR 0021](docs/adr/0021-training-data-can-be-prepared-as-csv.md)).
+
 ### Data: synthetic datasets (`cmd/synthesize`)
 
 `synthesize` writes a synthetic `pix-training-example-v2` dataset of any

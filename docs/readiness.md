@@ -49,6 +49,7 @@ Deliberate mutations of the code, recorded in each issue's pull request, checked
 | G13 | Only 64-bit platforms build, and both supported architectures are tested. | `TestThirtyTwoBitPlatformsDoNotBuild`; the CI matrix. | windows/amd64 builds but is not tested. |
 | G14 | A clean checkout runs the whole workflow without real data or a bundled model. | `TestDocumentedWorkflow`, the README quick start, `Example` in `scoring`. | The data is synthetic. |
 | G15 | Failures write nothing: invalid or version 1 datasets, other schemas, damaged artifacts, tampered runs, existing or unwritable outputs, and interrupts. | `TestFailuresWriteNothing`, `TestInterruptedTrainingPublishesNothing`, and the command tests. | — |
+| G16 | Training data prepared in the CSV template converts to the same records `train` reads, with every problem reported by row and column, and real data has an ignored place in the checkout. | `TestConvertRoundTrips`, `TestConvertReportsProblemsByRowAndColumn`, `TestTemplateConvertsAndTrains`, `TestTemplateWorkflow`; ADR 0021. | The template cannot tell whether an `as_of` is true; point-in-time correctness stays with whoever fills it. |
 
 ## 4. Operating envelope
 

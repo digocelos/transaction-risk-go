@@ -222,6 +222,9 @@ _Avoid_: Fold, random split
 **Decision threshold**:
 The score at or above which a Pix payment is predicted fraudulent, fixed before the test partition is evaluated.
 
+**Training data template**:
+The CSV file, one column per value of a training example, in which training data can be prepared before it is converted to a training dataset; it is never read by training itself.
+
 **Dataset fingerprint**:
 The SHA-256 digest of the exact bytes of a training dataset.
 
