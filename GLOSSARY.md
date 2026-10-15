@@ -249,6 +249,13 @@ _Avoid_: Failed evaluation
 
 ## Operations
 
+**Software readiness**:
+Evidence that the toolkit behaves as specified, from contracts to scoring, on synthetic data; it says nothing about whether a model detects fraud.
+
+**Model readiness**:
+The acceptance of one trained model for use, after validation on real, representative data against an agreed risk policy; it is outside the toolkit.
+_Avoid_: Production-ready model (for software checks)
+
 **Supported envelope**:
 The dataset sizes, training work, and file sizes the toolkit accepts by default, set from measurements on reference hardware; work beyond it is refused, not attempted.
 

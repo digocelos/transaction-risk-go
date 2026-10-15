@@ -18,7 +18,9 @@ synthetic and only exercise the software. A model is ready only after you
 train it on a large, representative dataset of mature labels, evaluate it
 on held-out data, and accept its precision, recall, false positives, and
 missed losses against your own risk policy; the toolkit gives you the
-measurements, not the verdict.
+measurements, not the verdict. The [readiness checklist](docs/readiness.md)
+lists each software guarantee with its evidence and limits, and the
+validation that real data still needs.
 
 ## Requirements
 
@@ -451,4 +453,6 @@ compatibility (ADR 0013, ADR 0020):
 - [`docs/adr/`](docs/adr/): the architecture decisions.
 - [`docs/operations/`](docs/operations/): operating limits and
   measurements.
+- [`docs/readiness.md`](docs/readiness.md): the software readiness
+  checklist.
 - [`GLOSSARY.md`](GLOSSARY.md): the domain vocabulary.
