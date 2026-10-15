@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// expectedResult is the part of an example's expected cmd/predict output
+// expectedResult is the part of an example's expected preparation result
 // that validation decides.
 type expectedResult struct {
 	Status string `json:"status"`
@@ -70,7 +70,7 @@ func TestDecodeSpecificationExamples(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err = Decode(readExample(t, name), ContractV1)
+			_, err = Decode(readExample(t, name), ContractV2)
 
 			if expected.Status != "invalid_input" {
 				if err != nil {
@@ -90,61 +90,63 @@ func TestDecodeSpecificationExamples(t *testing.T) {
 		})
 	}
 
-	if count != 17 {
-		t.Errorf("found %d examples, want 17", count)
+	if count != 20 {
+		t.Errorf("found %d examples, want 20", count)
 	}
 }
 
 func TestDecodeKeepsMissingAndNotApplicableApart(t *testing.T) {
-	decode := func(name string) ScoringInput {
+	decode := func(name string, data []byte) ScoringInput {
 		t.Helper()
 
-		input, err := Decode(readExample(t, name), ContractV1)
+		input, err := Decode(data, ContractV2)
 		if err != nil {
 			t.Fatalf("Decode(%s) error = %v", name, err)
 		}
 
 		return input
 	}
+	const key = "observations/recipient_pix_key"
 
-	if key := decode("02-dict-group-missing.json").Observations.RecipientPixKey; key == nil ||
-		key.FraudMarkers != nil || key.Spi == nil {
-		t.Errorf("02: want only the fraud_markers group missing, got %+v", key)
+	partial := decode("02", readExample(t, "02-partial-dict.json"))
+	if markers := partial.Observations.RecipientPixKey; markers == nil || markers.FraudMarkers != nil || markers.Spi == nil {
+		t.Errorf("02: want only the key's fraud_markers group missing, got %+v", markers)
 	}
-
-	if markers := decode("03-dict-member-missing.json").Observations.RecipientPixKey.FraudMarkers; markers == nil ||
-		markers.MuleAccounts != nil || markers.ScammerAccounts == nil {
-		t.Errorf("03: want only mule_accounts missing, got %+v", markers)
-	}
-
-	if mule := decode("04-dict-window-missing.json").Observations.RecipientPixKey.FraudMarkers.MuleAccounts; mule == nil ||
+	if mule := partial.Observations.RecipientPerson.FraudMarkers.MuleAccounts; mule == nil ||
 		mule.D90 != nil || mule.M12 == nil || *mule.M12 != 0 {
-		t.Errorf("04: want only d90 missing, got %+v", mule)
+		t.Errorf("02: want only the person's mule_accounts d90 missing, got %+v", mule)
 	}
 
-	if device := decode("05-known-zero.json").Observations.PayerDevice; device == nil ||
+	member := decode("member", edit(t, map[string]any{key + "/fraud_markers/mule_accounts": nil}))
+	if markers := member.Observations.RecipientPixKey.FraudMarkers; markers == nil ||
+		markers.MuleAccounts != nil || markers.ScammerAccounts == nil {
+		t.Errorf("member: want only mule_accounts missing, got %+v", markers)
+	}
+
+	zero := decode("known zero", edit(t, map[string]any{"observations/payer_device/settled_outgoing_pix_90d/count": 0}))
+	if device := zero.Observations.PayerDevice; device == nil ||
 		device.SettledOutgoingPix90d == nil || device.SettledOutgoingPix90d.Count != 0 {
-		t.Errorf("05: want a known zero device count, got %+v", device)
+		t.Errorf("known zero: want a known zero device count, got %+v", device)
 	}
 
-	if device := decode("06-integrator-observation-missing.json").Observations.PayerDevice; device == nil ||
-		device.SettledOutgoingPix90d != nil {
-		t.Errorf("06: want the device subject present with a missing observation, got %+v", device)
+	missing := decode("missing", edit(t, map[string]any{"observations/payer_device/settled_outgoing_pix_90d": nil}))
+	if device := missing.Observations.PayerDevice; device == nil || device.SettledOutgoingPix90d != nil {
+		t.Errorf("missing: want the device subject present with a missing observation, got %+v", device)
 	}
 
-	if settled := decode("07-median-semantic-null.json").Observations.PayerAccount.SettledOutgoingPix90d; settled == nil ||
+	if settled := decode("03", readExample(t, "03-new-account.json")).Observations.PayerAccount.SettledOutgoingPix90d; settled == nil ||
 		settled.Count != 0 || settled.MedianAmountCents != nil {
-		t.Errorf("07: want a known, empty history, got %+v", settled)
+		t.Errorf("03: want a known, empty history, got %+v", settled)
 	}
 
-	noKey := decode("08-no-pix-key.json")
+	noKey := decode("04", readExample(t, "04-no-pix-key.json"))
 	if noKey.PixPayment.RecipientKeyUsage != NoPixKey || noKey.Observations.RecipientPixKey != nil ||
 		noKey.Observations.RecipientAccount.Entry != nil {
-		t.Errorf("08: want no key subject and a missing account entry, got %+v", noKey.Observations)
+		t.Errorf("04: want no key subject and a missing account entry, got %+v", noKey.Observations)
 	}
 
-	noDevice := decode("09-no-payer-device.json")
+	noDevice := decode("05", readExample(t, "05-no-payer-device.json"))
 	if noDevice.PixPayment.PayerDeviceUsage != NoPayerDevice || noDevice.Observations.PayerDevice != nil {
-		t.Errorf("09: want no payer device subject, got %+v", noDevice.Observations.PayerDevice)
+		t.Errorf("05: want no payer device subject, got %+v", noDevice.Observations.PayerDevice)
 	}
 }

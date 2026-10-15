@@ -33,7 +33,7 @@ func (failingReader) Read([]byte) (int, error) {
 }
 
 func TestReadDecodesAValidDocument(t *testing.T) {
-	input, err := Read(bytes.NewReader(readExample(t, completeExample)), ContractV1)
+	input, err := Read(bytes.NewReader(readExample(t, completeExample)), ContractV2)
 	if err != nil {
 		t.Fatalf("Read() error = %v", err)
 	}
@@ -46,7 +46,7 @@ func TestReadDecodesAValidDocument(t *testing.T) {
 func TestReadStopsAfterTheSizeLimit(t *testing.T) {
 	reader := &endlessReader{}
 
-	_, err := Read(reader, ContractV1)
+	_, err := Read(reader, ContractV2)
 
 	want := []pathCode{{"", "document_too_large"}}
 	if got := issuesOf(t, err); len(got) != 1 || got[0] != want[0] {
@@ -59,7 +59,7 @@ func TestReadStopsAfterTheSizeLimit(t *testing.T) {
 }
 
 func TestReadReturnsReaderFailures(t *testing.T) {
-	_, err := Read(io.MultiReader(bytes.NewReader([]byte("{")), failingReader{}), ContractV1)
+	_, err := Read(io.MultiReader(bytes.NewReader([]byte("{")), failingReader{}), ContractV2)
 
 	var validationErr *ValidationError
 	if errors.As(err, &validationErr) {

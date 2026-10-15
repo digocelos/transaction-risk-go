@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-const examplesDir = "../docs/contracts/training-examples"
+const examplesDir = "../docs/contracts/training-examples-v2"
 
 // scanReport scans a dataset and builds its dataset report.
 func scanReport(t *testing.T, data []byte) Report {
 	t.Helper()
-	return scanReportWith(t, data, TransactionFeaturesV1)
+	return scanReportWith(t, data, PixRiskV1)
 }
 
 // scanReportWith scans a dataset with a feature schema and builds its
@@ -60,19 +60,6 @@ func TestScanSpecificationExamples(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(datasets) != 8 {
-		t.Fatalf("found %d example datasets, want 8", len(datasets))
-	}
-
-	checkExamples(t, datasets, TransactionFeaturesV1)
-}
-
-func TestScanV2SpecificationExamples(t *testing.T) {
-	datasets, err := filepath.Glob(filepath.Join("../docs/contracts/training-examples-v2", "*.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
 	if len(datasets) != 11 {
 		t.Fatalf("found %d example datasets, want 11", len(datasets))
 	}
@@ -109,37 +96,30 @@ func checkExamples(t *testing.T, datasets []string, schema FeatureSchema) {
 	}
 }
 
-// Each feature schema reads only its own training example version, and the
+// A feature schema reads only its own training example version, and the
 // scoring input version that version embeds.
 func TestScanRejectsOtherVersions(t *testing.T) {
-	v1, err := os.ReadFile(filepath.Join(examplesDir, "01-usable-legitimate.jsonl"))
+	v2, err := os.ReadFile(filepath.Join(examplesDir, "01-usable-legitimate.jsonl"))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	v2, err := os.ReadFile("../docs/contracts/training-examples-v2/01-usable-legitimate.jsonl")
-	if err != nil {
-		t.Fatal(err)
-	}
-
+	v1 := strings.Replace(string(v2), `"pix-training-example-v2"`, `"pix-training-example-v1"`, 1)
 	embeddedV1 := strings.Replace(string(v2), `"contract_version":"pix-payer-input-v2"`, `"contract_version":"pix-payer-input-v1"`, 1)
 
 	tests := []struct {
-		name   string
-		data   string
-		schema FeatureSchema
-		want   IssueReference
+		name string
+		data string
+		want IssueReference
 	}{
-		{"v1 record for pix-risk-v1", string(v1), PixRiskV1,
+		{"retired training example version", v1,
 			IssueReference{Path: "/training_example_version", Code: CodeUnsupportedTrainingExampleVersion}},
-		{"v2 record for transaction-features-v1", string(v2), TransactionFeaturesV1,
-			IssueReference{Path: "/training_example_version", Code: CodeUnsupportedTrainingExampleVersion}},
-		{"v2 record embedding a v1 scoring input", embeddedV1, PixRiskV1,
+		{"retired embedded scoring input version", embeddedV1,
 			IssueReference{Path: "/scoring_input/contract_version", Code: "unsupported_contract_version"}},
 	}
 
 	for _, test := range tests {
-		report := scanReportWith(t, []byte(test.data), test.schema)
+		report := scanReportWith(t, []byte(test.data), PixRiskV1)
 
 		want := []Exclusion{{Line: 1, Category: Invalid, Issues: []IssueReference{test.want}}}
 		if !reflect.DeepEqual(report.Exclusions, want) {

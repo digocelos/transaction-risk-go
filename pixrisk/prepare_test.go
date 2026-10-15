@@ -493,13 +493,13 @@ func TestPreparePartialDictResponses(t *testing.T) {
 }
 
 func TestPrepareRequiresVersion2(t *testing.T) {
-	v1, err := pixinput.Decode(readFile(t, "../docs/contracts/examples/01-complete.json"), pixinput.ContractV1)
-	if err != nil {
-		t.Fatal(err)
-	}
+	for _, version := range []string{"pix-payer-input-v1", ""} {
+		input := decode(t, readFile(t, filepath.Join(examplesDir, "01-complete.json")))
+		input.ContractVersion = version
 
-	var insufficient *InsufficientInputError
-	if _, err := Prepare(v1); err == nil || errors.As(err, &insufficient) {
-		t.Errorf("Prepare() of a version 1 input: error = %v, want an operational error", err)
+		var insufficient *InsufficientInputError
+		if _, err := Prepare(input); err == nil || errors.As(err, &insufficient) {
+			t.Errorf("Prepare() of a %q input: error = %v, want an operational error", version, err)
+		}
 	}
 }
