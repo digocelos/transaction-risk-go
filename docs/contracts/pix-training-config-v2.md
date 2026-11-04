@@ -1,6 +1,6 @@
 # Training configuration `pix-training-config-v2`
 
-**Status:** Normative for `pix-training-config-v2`. It replaces `pix-training-config-v1`, which the toolkit no longer accepts: version 2 adds validation-based checkpoints, early stopping, threshold selection, and an explicit test evaluation (ADR 0014, ADR 0015).
+**Status:** Normative for `pix-training-config-v2`, which the toolkit still accepts; superseded by [`pix-training-config-v3`](pix-training-config-v3.md), which adds the initialization, the loss, and the regularization options (ADR 0022). It replaces `pix-training-config-v1`, which the toolkit no longer accepts: version 2 adds validation-based checkpoints, early stopping, threshold selection, and an explicit test evaluation (ADR 0014, ADR 0015).
 
 ## 1. Scope
 

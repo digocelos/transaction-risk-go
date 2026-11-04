@@ -17,7 +17,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | Member | Type | Meaning |
 |---|---|---|
 | `training_report_version` | string | `pix-training-report-v2`. |
-| `configuration` | object | `config_sha256`, the configuration's identity, and `config`, its canonical form ([`pix-training-config-v2` §6](pix-training-config-v2.md#6-canonical-form-and-identity)). |
+| `configuration` | object | `config_sha256`, the configuration's identity, and `config`, its canonical form in its own version ([`pix-training-config-v2` §6](pix-training-config-v2.md#6-canonical-form-and-identity), [`pix-training-config-v3` §6](pix-training-config-v3.md#6-canonical-form-and-identity)); the report's layout does not depend on the configuration version (ADR 0022). |
 | `dataset` | object | The dataset report of [`pix-training-example-v2` §13](pix-training-example-v2.md#13-dataset-report). |
 | `partitions` | object | `train_end`, `validation_end`, the per-partition counts of usable `fraud` and `legitimate`, insufficient, and immature records, and the group overlap ([`pix-training-example-v2` §11](pix-training-example-v2.md#11-temporal-evaluation-protocol)). |
 | `coverage` | object | See [section 4](#4-coverage). |
@@ -52,7 +52,7 @@ The optional sources are `period_limit`, `payer_device_history`, `payer_device_r
 | `checkpoint_policy` | string | `final_epoch` or `best_validation`. |
 | `objective` | string or `null` | The validation objective of `best_validation`; `null` for `final_epoch`. |
 | `evaluations` | integer | The number of validation evaluations; 0 for `final_epoch`. |
-| `selected_objective_value` | number or `null` | The objective value of the selected epoch; `null` for `final_epoch`. |
+| `selected_objective_value` | number or `null` | The objective value of the selected epoch; `null` for `final_epoch`. For `validation_loss`, it is the configured loss over the usable validation records: the mean squared error, or, with a version 3 configuration, the loss it names. |
 | `threshold` | object | `policy`, `value`, the decision threshold used for every metric, and, for `max_recall_at_max_false_positive_rate`, the configured `max_false_positive_rate` and the number of `candidates`; both are `null` for a `fixed` threshold. |
 
 A run that cannot select produces no report: a validation partition that does not meet the requirements of [`pix-training-config-v2` §3.2](pix-training-config-v2.md#32-selection), or a threshold policy that no candidate satisfies, stops the run before anything is written.

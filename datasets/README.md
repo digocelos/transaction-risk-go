@@ -152,7 +152,7 @@ go run ./cmd/inspect -run data/runs/scenarios-v1 -dataset data/scenarios.jsonl -
 go run ./cmd/evaluate -model data/scenarios-model.json -dataset data/scenarios.jsonl -partition test -output data/scenarios-evaluation.json
 ```
 
-`inspect` reports, among other things, that no train record exercises `limit_zero` or `key_type_other`, that the score falls as `key_distinct_accounts_m12` grows past 1, and that masking the recipient's key entry lets frauds fall below the threshold: the model learned the shortcuts this dataset makes true ([`pix-model-inspection-v1`](../docs/contracts/pix-model-inspection-v1.md)).
+`inspect` reports, among other things, that no train record exercises `limit_zero` or `key_type_other`, that the score falls as `key_distinct_accounts_m12` grows past 1, and that masking the recipient's key entry lets frauds fall below the threshold: the model learned the shortcuts this dataset makes true ([`pix-model-inspection-v1`](../docs/contracts/pix-model-inspection-v1.md)). A [`pix-training-config-v3`](../docs/contracts/pix-training-config-v3.md) configuration with the scaled initialization, zeroed unexercised inputs, the cross-entropy, weight decay, and availability dropout, such as `docs/contracts/training-config-examples/15-v3-regularized.json` with these boundaries, addresses the training-side causes; the data-side ones need another dataset.
 
 `evaluate` exits with code 3 and marks the report incomplete for `unknown_loss_frauds`: some test frauds have an unknown loss by design, so the known-loss sums are partial ([`pix-evaluation-report-v1` §5.5](../docs/contracts/pix-evaluation-report-v1.md#55-completeness)).
 

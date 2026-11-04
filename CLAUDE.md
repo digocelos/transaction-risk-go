@@ -10,7 +10,7 @@ Workflow packages, in the order a model moves through them:
 - `pixrisk/`: the `pix-risk-v1` feature schema: preparation, fitted standardization, coverage.
 - `trainingdata/`: reads and classifies `pix-training-example-v2` datasets.
 - `trainingcsv/`: converts training data in the `pix-training-csv-v1` CSV layout to JSON Lines; the template is in `templates/training-data/`.
-- `trainingconfig/`: decodes `pix-training-config-v2` configurations.
+- `trainingconfig/`: decodes `pix-training-config-v2` and `pix-training-config-v3` configurations; a v2 document keeps its identity and trains the same model (ADR 0022).
 - `evaluation/`: temporal partitions, metrics, threshold selection.
 - `nn/`: the dense network and full-batch gradient descent.
 - `training/`: runs training, selection, and limits; writes `trainingreport` reports.

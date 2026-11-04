@@ -228,6 +228,21 @@ The CSV file, one column per value of a training example, in which training data
 **Dataset fingerprint**:
 The SHA-256 digest of the exact bytes of a training dataset.
 
+**Initialization scheme**:
+The distribution the initial weights are drawn from, fixed by the configuration: uniform in [−0.5, 0.5), or scaled by each layer's number of inputs so that pre-activations start with unit variance.
+
+**Weight decay**:
+The L2 regularization of the configuration: each weight, never a bias, also moves toward 0 by the learning rate times a coefficient times its value, on every update.
+_Avoid_: Ridge, shrinkage
+
+**Availability dropout**:
+Masking, during training only, the features of an optional source in a train record with a fixed probability per epoch, exactly as an unavailable source is represented, so the network learns what a missing observation means; validation and test records are never masked.
+_Avoid_: Dropout (of neurons)
+
+**Binary cross-entropy**:
+The training loss that is the negative log-likelihood of the label under the score; its gradient does not vanish when the score saturates, unlike the mean squared error's.
+_Avoid_: Log loss (in the toolkit's documents)
+
 ## Evaluation
 
 **Independent evaluation**:

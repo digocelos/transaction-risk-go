@@ -16,7 +16,7 @@ The report describes software behavior on the data supplied. Nothing in it is a 
 
 | Input | Rules |
 |---|---|
-| Run | A `pix-risk-run-v1` directory, verified completely as [`pix-risk-model-v1` §3](pix-risk-model-v1.md#3-training-run) requires: every file against the manifest, the artifact, the configuration, and their bindings. The artifact and the configuration come from the verified files; the configuration supplies the `seed` and the architecture that rebuild the initial network. |
+| Run | A `pix-risk-run-v1` directory, verified completely as [`pix-risk-model-v1` §3](pix-risk-model-v1.md#3-training-run) requires: every file against the manifest, the artifact, the configuration, and their bindings. The artifact and the configuration come from the verified files; the configuration supplies the `seed`, the architecture, the initialization, and whether unexercised inputs were zeroed, which rebuild the network training started from exactly as `training.InitialNetwork` does. |
 | Dataset | The run's training dataset, read, classified, partitioned, and prepared with `pix-risk-v1` exactly as training did ([`pix-training-example-v2` §9](pix-training-example-v2.md#9-record-classification)). Its SHA-256 MUST be the artifact's `dataset_sha256`, and the preparation state fitted on its train partition MUST equal the artifact's; otherwise the inspection fails. A dataset with any invalid record is not inspected: the inspection fails with the dataset report and every diagnostic, and no report is written. |
 
 The run is verified before the dataset is read. There is no scope and no threshold override: inspection uses the artifact's partitions and threshold.
@@ -44,12 +44,12 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | Member | Meaning |
 |---|---|
 | `sizes` | The architecture, `[62, hidden layers…, 1]`, as the artifact records. |
-| `seed` | The configuration's `seed`, from which the initial network is rebuilt as training did. |
+| `seed` | The configuration's `seed`, from which the initial network is rebuilt as training did, with the configuration's initialization scheme and, when it zeroes unexercised inputs, their columns at 0. |
 | `inputs` | One object per feature, in descriptor order: `name`, `kind`, `column_norm`, the L2 norm of the feature's column of first-layer weights; `change_norm`, the L2 norm of that column's change since initialization; `max_abs_change`, the largest absolute change of one weight in it; `train_nonzero_records`, the number of usable train records in which the feature is not 0; and `exercised_in_train`, whether that number is positive. |
 | `hidden_layers` | One object per hidden layer, in order: `neurons`, one object per neuron with `bias`, `input_norm`, the L2 norm of its weights, `output_norm`, the L2 norm of the weights that read it in the next layer, and `activation`, its output on the usable train records as `mean`, `below_0_01`, and `above_0_99`, the shares of records on which the output is below 0.01 and above 0.99; and `max_abs_cosine`, the pair of neurons of the layer whose weight rows have the largest absolute cosine, as `value` and `neurons`, or `null` for a layer with one neuron. |
 | `output` | The output neuron's `weights`, one per neuron of the last hidden layer, and `bias`. |
 
-Full-batch gradient descent changes a first-layer weight only through records in which its input is not 0, so a column with `exercised_in_train` `false` has `change_norm` exactly 0 and holds its random initialization. Neurons that are saturated on most records, or pairs with a cosine near 1 or −1, show capacity the model does not use.
+Full-batch gradient descent changes a first-layer weight only through records in which its input is not 0, so a column with `exercised_in_train` `false` has `change_norm` exactly 0 and holds its initialization: the random draw, or 0 when the configuration zeroes unexercised inputs ([`pix-training-config-v3` §3.2](pix-training-config-v3.md#32-initialization)), in which case its `column_norm` is 0 too. Neurons that are saturated on most records, or pairs with a cosine near 1 or −1, show capacity the model does not use.
 
 ### 4.2 Unexercised features
 
