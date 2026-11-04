@@ -18,7 +18,9 @@ jobs:
         # The supported platforms: linux/amd64 and darwin/arm64.
         os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # The timer includes the wait for a hosted runner, and macos-15 runners
+    # can take longer than the steps themselves to become available.
+    timeout-minutes: 45
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
