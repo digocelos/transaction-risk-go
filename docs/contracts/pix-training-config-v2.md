@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 
 ## 2. Document
 
-A configuration follows the document rules of [`pix-payer-input-v2` §4](pix-payer-input-v2.md#4-document): at most 65,536 bytes, no byte order mark, valid UTF-8, exactly one JSON object, no duplicate members, and no unknown members at any level. Validation reports every issue with a JSON Pointer `path`, a `code`, and a `message` that is not part of the contract, sorted by `path` and then by `code`. The document, version, structure, and consistency stages are those of [`pix-payer-input-v2` §11.1](pix-payer-input-v2.md#111-stages), with `config_version` in place of `contract_version`.
+A configuration follows the document rules of [`pix-payer-input-v3` §4](pix-payer-input-v3.md#4-document): at most 65,536 bytes, no byte order mark, valid UTF-8, exactly one JSON object, no duplicate members, and no unknown members at any level. Validation reports every issue with a JSON Pointer `path`, a `code`, and a `message` that is not part of the contract, sorted by `path` and then by `code`. The document, version, structure, and consistency stages are those of [`pix-payer-input-v3` §11.1](pix-payer-input-v3.md#111-stages), with `config_version` in place of `contract_version`.
 
 ## 3. Members
 
@@ -21,14 +21,14 @@ Every member is required and none is nullable.
 | Member | Type | Rules |
 |---|---|---|
 | `config_version` | string | `pix-training-config-v2`. Any other value, including `pix-training-config-v1`, is rejected with `unsupported_config_version`. |
-| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v2`; `pix-risk-v1`, which the toolkit no longer implements, is rejected (ADR 0023). The network's input size is the feature count of this schema, 62. |
+| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v3`; `pix-risk-v1` and `pix-risk-v2`, which the toolkit no longer implements, are rejected (ADR 0023, ADR 0024). The network's input size is the feature count of this schema, 65. |
 | `architecture` | object | See [3.1](#31-architecture). |
 | `algorithm` | closed enumeration | `full-batch-gradient-descent`: every epoch is one gradient descent step over all usable train records, in dataset line order. |
 | `loss` | closed enumeration | `mean-squared-error`, averaged over records and outputs. |
-| `seed` | integer | 0 to 2^53−1, with the integer grammar of `pix-payer-input-v2` §5.1. It seeds the initial weights. |
+| `seed` | integer | 0 to 2^53−1, with the integer grammar of `pix-payer-input-v3` §5.1. It seeds the initial weights. |
 | `learning_rate` | number | Greater than 0 and at most 100. Any JSON number syntax is accepted, such as `1`, `0.5`, or `1e-3`. |
 | `max_epochs` | integer | 1 to 1,000,000. The run trains this many epochs unless early stopping ends it sooner. |
-| `boundaries` | object | `train_end` and `validation_end`, both timestamps as in `pix-payer-input-v2` §5.2. `train_end` MUST be earlier than `validation_end`, or `boundaries_out_of_order` is reported at `/boundaries/train_end`. They define the partitions of [`pix-training-example-v2` §11.1](pix-training-example-v2.md#111-partitions). |
+| `boundaries` | object | `train_end` and `validation_end`, both timestamps as in `pix-payer-input-v3` §5.2. `train_end` MUST be earlier than `validation_end`, or `boundaries_out_of_order` is reported at `/boundaries/train_end`. They define the partitions of [`pix-training-example-v3` §11.1](pix-training-example-v3.md#111-partitions). |
 | `selection` | object | See [3.2](#32-selection). |
 
 ### 3.1 Architecture
@@ -51,7 +51,7 @@ The network always has exactly one output, the risk score. A larger network is n
 | `final_epoch` | none | The model is the network after the last epoch trained. |
 | `best_validation` | `objective`, `evaluation_interval`, `min_improvement` | The validation objective is measured after every `evaluation_interval` epochs and after the last epoch trained, and the network with the best value is restored. |
 
-- `objective`: `validation_loss`, the mean squared error over the usable validation records (lower is better), or `validation_pr_auc`, their average precision as in [`pix-training-example-v2` §11.5](pix-training-example-v2.md#115-metrics) (higher is better).
+- `objective`: `validation_loss`, the mean squared error over the usable validation records (lower is better), or `validation_pr_auc`, their average precision as in [`pix-training-example-v3` §11.5](pix-training-example-v3.md#115-metrics) (higher is better).
 - `evaluation_interval`: an integer from 1 to 1,000,000 epochs.
 - `min_improvement`: a number from 0 to 1. An evaluation improves on the best one only when it is better by more than this amount, so equal values keep the earliest epoch.
 
@@ -92,12 +92,12 @@ With `final_epoch` and a `fixed` threshold, the validation partition can be empt
 
 ## 5. Validation codes
 
-The catalog is closed. Codes shared with `pix-payer-input-v2` keep their meaning there.
+The catalog is closed. Codes shared with `pix-payer-input-v3` keep their meaning there.
 
 | Code | Condition |
 |---|---|
-| `document_too_large`, `bom_not_allowed`, `invalid_utf8`, `invalid_json`, `trailing_data`, `duplicate_member` | Document rules, as in `pix-payer-input-v2`. |
-| `wrong_type`, `required`, `unknown_member`, `null_not_allowed`, `invalid_number_format`, `invalid_format`, `invalid_enum_value` | As in `pix-payer-input-v2`, for configuration members. An unsupported option, such as the objective `accuracy`, is `invalid_enum_value`. |
+| `document_too_large`, `bom_not_allowed`, `invalid_utf8`, `invalid_json`, `trailing_data`, `duplicate_member` | Document rules, as in `pix-payer-input-v3`. |
+| `wrong_type`, `required`, `unknown_member`, `null_not_allowed`, `invalid_number_format`, `invalid_format`, `invalid_enum_value` | As in `pix-payer-input-v3`, for configuration members. An unsupported option, such as the objective `accuracy`, is `invalid_enum_value`. |
 | `out_of_range` | A number, an integer, the number of hidden layers, or a layer size outside its range. |
 | `unsupported_config_version` | `config_version` is a string other than `pix-training-config-v2`. |
 | `boundaries_out_of_order` | `train_end` is not earlier than `validation_end`. |

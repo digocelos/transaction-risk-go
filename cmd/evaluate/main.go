@@ -52,7 +52,7 @@ const usage = `usage: evaluate -model FILE -dataset FILE -output FILE
                 [-max-records N]
 
 Evaluates a pix-risk-model-v1 artifact on one scope of a
-pix-training-example-v2 dataset and writes a pix-evaluation-report-v1
+pix-training-example-v3 dataset and writes a pix-evaluation-report-v1
 report. The scope is a partition of the model's boundaries, or the decision
 times after -after, through -through when set; it never starts before the
 model's train_end. Evaluation never trains, refits, selects, or changes the
@@ -193,7 +193,7 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	}
 
 	fs.StringVar(&opts.model, "model", "", "pix-risk-model-v1 artifact `file`")
-	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
+	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v3 dataset `file` (JSON Lines)")
 	fs.StringVar(&opts.output, "output", "", "`file` to write the evaluation report to")
 	fs.StringVar(&partition, "partition", "", "partition of the model's boundaries to evaluate: validation or test")
 	fs.StringVar(&after, "after", "", "evaluate decision times after this RFC 3339 `time`, exclusive")

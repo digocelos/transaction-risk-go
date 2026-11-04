@@ -16,7 +16,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
-// selectionFixture holds 13 pix-training-example-v2 records: six train
+// selectionFixture holds 13 pix-training-example-v3 records: six train
 // records (lines 1–6), two legitimate and two fraud validation records
 // (lines 7–10), and three test records (lines 11–13). Two validation
 // records contradict the train records: a fraud from a registered device to

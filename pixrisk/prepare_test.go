@@ -14,7 +14,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/pixinput"
 )
 
-const examplesDir = "../docs/contracts/examples-v2"
+const examplesDir = "../docs/contracts/examples-v3"
 
 // tolerance bounds the difference between the expected values, computed by
 // an independent implementation, and the prepared values of features that
@@ -45,7 +45,7 @@ func readFile(t *testing.T, path string) []byte {
 func decode(t *testing.T, data []byte) pixinput.ScoringInput {
 	t.Helper()
 
-	input, err := pixinput.Decode(data, pixinput.ContractV2)
+	input, err := pixinput.Decode(data, pixinput.ContractV3)
 	if err != nil {
 		t.Fatalf("Decode() error = %v", err)
 	}
@@ -239,7 +239,7 @@ func timeOnlyInput(t *testing.T, decisionTime, offset string) pixinput.ScoringIn
 	t.Helper()
 
 	document := `{
-	  "contract_version": "pix-payer-input-v2",
+	  "contract_version": "pix-payer-input-v3",
 	  "decision_time": "` + decisionTime + `",
 	  "pix_payment": {"amount_cents": 1000, "payer_device_usage": "no_payer_device",
 	    "recipient_key_usage": "no_pix_key", "recipient_person_type": "NATURAL_PERSON",
@@ -247,7 +247,7 @@ func timeOnlyInput(t *testing.T, decisionTime, offset string) pixinput.ScoringIn
 	  "observations": {
 	    "payer_account": {
 	      "settled_outgoing_pix_90d": {"count": 0, "median_amount_cents": null, "as_of": "` + decisionTime + `"},
-	      "initiated_outgoing_pix_24h": {"count": 0, "as_of": "` + decisionTime + `"}},
+	      "initiated_outgoing_pix_24h": {"count": 0, "amount_cents": 0, "as_of": "` + decisionTime + `"}},
 	    "recipient_person": {
 	      "settled_pix_from_payer_account_365d": {"count": 0, "as_of": "` + decisionTime + `"},
 	      "spi": null, "fraud_markers": null, "infraction_reports": null, "entries": null},

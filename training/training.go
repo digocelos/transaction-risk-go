@@ -1,5 +1,5 @@
 // Package training trains a payer-side Pix fraud model from a
-// pix-training-example-v2 dataset, as a pix-training-config-v2
+// pix-training-example-v3 dataset, as a pix-training-config-v2
 // configuration describes, and evaluates it with the temporal evaluation
 // protocol: the preparation state and the network are fitted on the train
 // partition only, the checkpoint and the threshold are chosen on the

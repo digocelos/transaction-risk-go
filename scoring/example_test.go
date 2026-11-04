@@ -40,7 +40,7 @@ func Example() {
 		log.Fatal(err)
 	}
 
-	document, err := os.ReadFile("../docs/contracts/examples-v2/04-no-pix-key.json")
+	document, err := os.ReadFile("../docs/contracts/examples-v3/04-no-pix-key.json")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func Example() {
 	}
 
 	// Output:
-	// scored pix-payer-input-v2 pix-risk-v2
+	// scored pix-payer-input-v3 pix-risk-v3
 	// score from 0 to 1: true
 	// note: /observations/recipient_account/entry missing
 	// note: /pix_payment/recipient_key_usage not_applicable

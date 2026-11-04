@@ -229,8 +229,8 @@ func TestRunBuildsTheConfiguredArchitecture(t *testing.T) {
 	for _, layer := range result.Network.Layers() {
 		sizes = append(sizes, len(layer.Biases))
 	}
-	if !reflect.DeepEqual(sizes, []int{62, 8, 3, 1}) {
-		t.Errorf("layer sizes = %v, want [62 8 3 1]", sizes)
+	if !reflect.DeepEqual(sizes, []int{65, 8, 3, 1}) {
+		t.Errorf("layer sizes = %v, want [65 8 3 1]", sizes)
 	}
 }
 
@@ -258,7 +258,7 @@ func TestRunReportsTrainingLoss(t *testing.T) {
 }
 
 func TestRunStopsOnInvalidRecords(t *testing.T) {
-	_, err := Run(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")),
+	_, err := Run(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v3/dataset.jsonl")),
 		config(), DefaultLimits, func(int, float64) { t.Fatal("a dataset with invalid records must not be trained") })
 
 	var invalid *InvalidDatasetError
@@ -390,7 +390,7 @@ const crossArchitectureTolerance = 1e-9
 
 // Scores trained with the baseline configuration example, recorded on
 // arm64, with the validation and test records clipped to the train range
-// as pix-risk-v2 requires. CI runs this test on amd64.
+// as pix-risk-v3 requires. CI runs this test on amd64.
 func TestRunMatchesReferenceScoresAcrossArchitectures(t *testing.T) {
 	cfg, err := trainingconfig.Decode(read(t, "../docs/contracts/training-config-examples/01-baseline.json"))
 	if err != nil {
@@ -398,12 +398,12 @@ func TestRunMatchesReferenceScoresAcrossArchitectures(t *testing.T) {
 	}
 
 	reference := []float64{
-		0.0048212408770026824, // line 1
-		0.0060844999361150337, // line 2
-		0.0064366893694704549, // line 4
-		0.98956233721487585,   // line 5
-		0.98898943206174406,   // line 6
-		0.97385018870668616,   // line 7
+		0.0046090680539099121, // line 1
+		0.0057212427723251176, // line 2
+		0.0058582728869140364, // line 4
+		0.98770164449262687,   // line 5
+		0.98690053351133822,   // line 6
+		0.98158128242409848,   // line 7
 	}
 
 	got := scores(t, run(t, read(t, pixRiskFixture), cfg))

@@ -1,6 +1,6 @@
 {
   "config_version": "pix-training-config-v2",
-  "feature_schema": "pix-risk-v2",
+  "feature_schema": "pix-risk-v3",
   "architecture": {
     "hidden_layers": [4],
     "activation": "sigmoid"

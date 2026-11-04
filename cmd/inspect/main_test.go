@@ -27,7 +27,7 @@ const (
 	// test records and a test fraud with an unknown loss (lines 11–13),
 	// with the boundaries of the trained model.
 	selectionFixture = "../../training/testdata/pix-risk-v1-selection.jsonl"
-	invalidDataset   = "../../docs/contracts/training-examples-v2/dataset.jsonl"
+	invalidDataset   = "../../docs/contracts/training-examples-v3/dataset.jsonl"
 	baseline         = "../../docs/contracts/training-config-examples/01-baseline.json"
 )
 

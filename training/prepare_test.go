@@ -16,7 +16,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 )
 
-// pixRiskFixture holds 8 pix-training-example-v2 records: four usable
+// pixRiskFixture holds 8 pix-training-example-v3 records: four usable
 // train records (lines 1, 2, 4, and 5) around an insufficient one (line
 // 3), one validation record (line 6), and a usable and an immature test
 // record (lines 7 and 8).
@@ -55,7 +55,7 @@ func TestPrepareDatasetPartitionsUsableRecords(t *testing.T) {
 
 	wantRecords := trainingdata.Counts{Total: 8, Usable: 6, Insufficient: 1, Immature: 1}
 	if dataset.Dataset.Records != wantRecords || dataset.Dataset.FeatureSchema != pixrisk.Schema ||
-		dataset.Dataset.TrainingExampleVersion != trainingdata.TrainingExampleV2 {
+		dataset.Dataset.TrainingExampleVersion != trainingdata.TrainingExampleV3 {
 		t.Errorf("dataset report = %+v", dataset.Dataset)
 	}
 
@@ -111,7 +111,7 @@ func TestPrepareDatasetMatchesScoringPreparation(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		input, err := pixinput.Decode(record.ScoringInput, pixinput.ContractV2)
+		input, err := pixinput.Decode(record.ScoringInput, pixinput.ContractV3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -137,7 +137,7 @@ func TestPrepareDatasetMatchesScoringPreparation(t *testing.T) {
 }
 
 func TestPrepareDatasetStopsOnInvalidRecords(t *testing.T) {
-	_, err := PrepareDataset(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v2/dataset.jsonl")), pixRiskBoundaries, DefaultLimits.MaxRecords)
+	_, err := PrepareDataset(context.Background(), bytes.NewReader(read(t, "../docs/contracts/training-examples-v3/dataset.jsonl")), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var invalid *InvalidDatasetError
 	if !errors.As(err, &invalid) {
@@ -150,7 +150,7 @@ func TestPrepareDatasetStopsOnInvalidRecords(t *testing.T) {
 }
 
 func TestPrepareDatasetStopsWhenAFeatureIsNeverKnownInTrain(t *testing.T) {
-	examples := "../docs/contracts/training-examples-v2/"
+	examples := "../docs/contracts/training-examples-v3/"
 
 	// Both train records have no payer device and no period limit.
 	legitimate := read(t, examples+"06-legitimate-no-device-no-period-limit.jsonl")
@@ -185,7 +185,7 @@ func TestPrepareDatasetValidatesBoundariesBeforeReading(t *testing.T) {
 // Records of another training example version are invalid.
 func TestPrepareDatasetRejectsVersion1Records(t *testing.T) {
 	// The fixture with every record relabeled as the retired version 1.
-	v1 := bytes.ReplaceAll(read(t, pixRiskFixture), []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`))
+	v1 := bytes.ReplaceAll(read(t, pixRiskFixture), []byte(`"pix-training-example-v3"`), []byte(`"pix-training-example-v1"`))
 	_, err := PrepareDataset(context.Background(), bytes.NewReader(v1), pixRiskBoundaries, DefaultLimits.MaxRecords)
 
 	var invalid *InvalidDatasetError

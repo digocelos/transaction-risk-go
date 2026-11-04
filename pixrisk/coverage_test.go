@@ -106,11 +106,11 @@ func TestPossibleStates(t *testing.T) {
 // preparation sets to 0 when the source is missing from the scoring input.
 func TestSourceFeaturesMatchPreparation(t *testing.T) {
 	decodeComplete := func() pixinput.ScoringInput {
-		data, err := os.ReadFile("../docs/contracts/examples-v2/01-complete.json")
+		data, err := os.ReadFile("../docs/contracts/examples-v3/01-complete.json")
 		if err != nil {
 			t.Fatal(err)
 		}
-		input, err := pixinput.Decode(data, pixinput.ContractV2)
+		input, err := pixinput.Decode(data, pixinput.ContractV3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -161,9 +161,9 @@ func TestSourceFeaturesMatchPreparation(t *testing.T) {
 		}
 	}
 
-	// The payment, context, and required payer history features (0 to 13)
-	// come from no optional source; every other feature comes from exactly
-	// one.
+	// The payment, context, and required payer history features (0 to 13,
+	// and 62 to 64) come from no optional source; every other feature comes
+	// from exactly one.
 	counts := map[int]int{}
 	for _, name := range Sources() {
 		for _, i := range SourceFeatures(name) {
@@ -171,7 +171,7 @@ func TestSourceFeaturesMatchPreparation(t *testing.T) {
 		}
 	}
 	for i, feature := range Descriptor() {
-		if want := i >= iLimitUtilization; covered[i] != want || counts[i] > 1 {
+		if want := i >= iLimitUtilization && i < iInitiatedAmount24h; covered[i] != want || counts[i] > 1 {
 			t.Errorf("feature %d %s: fed by %d sources, want optional %v", i, feature.Name, counts[i], want)
 		}
 	}

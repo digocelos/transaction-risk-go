@@ -17,7 +17,7 @@ The report describes software behavior on the data supplied. Nothing in it is a 
 | Input | Rules |
 |---|---|
 | Run | A `pix-risk-run-v1` directory, verified completely as [`pix-risk-model-v2` §3](pix-risk-model-v2.md#3-training-run) requires: every file against the manifest, the artifact, the configuration, and their bindings. The artifact and the configuration come from the verified files; the configuration supplies the `seed`, the architecture, the initialization, and whether unexercised inputs were zeroed, which rebuild the network training started from exactly as `training.InitialNetwork` does. |
-| Dataset | The run's training dataset, read, classified, partitioned, and prepared with `pix-risk-v2` exactly as training did ([`pix-training-example-v2` §9](pix-training-example-v2.md#9-record-classification)). Its SHA-256 MUST be the artifact's `dataset_sha256`, and the preparation state fitted on its train partition MUST equal the artifact's; otherwise the inspection fails. A dataset with any invalid record is not inspected: the inspection fails with the dataset report and every diagnostic, and no report is written. |
+| Dataset | The run's training dataset, read, classified, partitioned, and prepared with `pix-risk-v3` exactly as training did ([`pix-training-example-v3` §9](pix-training-example-v3.md#9-record-classification)). Its SHA-256 MUST be the artifact's `dataset_sha256`, and the preparation state fitted on its train partition MUST equal the artifact's; otherwise the inspection fails. A dataset with any invalid record is not inspected: the inspection fails with the dataset report and every diagnostic, and no report is written. |
 
 The run is verified before the dataset is read. There is no scope and no threshold override: inspection uses the artifact's partitions and threshold.
 
@@ -32,7 +32,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | `inspection_report_version` | string | `pix-model-inspection-v1`. |
 | `software` | object | `module`, `version`, and `revision` of the build that inspected, as in [`pix-risk-model-v2` §2](pix-risk-model-v2.md#2-model-artifact). |
 | `model` | object | The identity of the inspected artifact and of what produced it, with the members of [`pix-evaluation-report-v1` §5.1](pix-evaluation-report-v1.md#51-model). |
-| `dataset` | object | The dataset report of the training dataset ([`pix-training-example-v2` §13](pix-training-example-v2.md#13-dataset-report)). |
+| `dataset` | object | The dataset report of the training dataset ([`pix-training-example-v3` §13](pix-training-example-v3.md#13-dataset-report)). |
 | `partitions` | object | The partitions of the dataset at the artifact's boundaries, as in [`pix-training-report-v2` §3](pix-training-report-v2.md#3-members); they equal the training report's. |
 | `parameters` | object | See [section 4.1](#41-parameters). |
 | `unexercised_features` | array of strings | The names of the features whose value is 0 in every usable train record, in descriptor order; empty when every feature was exercised. See [section 4.2](#42-unexercised-features). |
@@ -57,7 +57,7 @@ A feature no usable train record exercised reaches the network, when a scoring i
 
 ### 4.3 Partial dependence
 
-For each standardized feature of [`pix-risk-v2` §9](../features/pix-risk-v2.md#9-features), in descriptor order, the score of every usable validation record is recomputed with the feature set to each value of a fixed grid, in real units, and its availability indicator forced to known. Every other feature keeps the record's value.
+For each standardized feature of [`pix-risk-v3` §9](../features/pix-risk-v3.md#9-features), in descriptor order, the score of every usable validation record is recomputed with the feature set to each value of a fixed grid, in real units, and its availability indicator forced to known. Every other feature keeps the record's value.
 
 | Member | Meaning |
 |---|---|
@@ -66,7 +66,7 @@ For each standardized feature of [`pix-risk-v2` §9](../features/pix-risk-v2.md#
 | `tolerance` | `0.001`, the smallest change of a mean score that counts as a move against a direction. |
 | `features` | One object per standardized feature: `name`; `unit`; `expected_direction`; `train_range`; `grid`; and `violations`. |
 
-The real units and their fixed transformations are those of [`pix-risk-v2` §9](../features/pix-risk-v2.md#9-features): `centavos` and `count` and `days` through `log1p`, `ratio` through `log1p` for `limit_utilization` and through `ln` for `amount_to_median_90d`. The grid values are:
+The real units and their fixed transformations are those of [`pix-risk-v3` §9](../features/pix-risk-v3.md#9-features): `centavos` and `count` and `days` through `log1p`, `ratio` through `log1p` for `limit_utilization` and through `ln` for `amount_to_median_90d`. The grid values are:
 
 | Unit | Features | Grid |
 |---|---|---|
@@ -76,13 +76,13 @@ The real units and their fixed transformations are those of [`pix-risk-v2` §9](
 | `ratio` | `limit_utilization` | 0, 0.1, 0.25, 0.5, 0.75, 0.9, 1, 1.25, 1.5, 2, 5, 10 |
 | `days` | `recipient_account_age`, `key_link_age`, `key_ownership_age` | 0, 1, 3, 7, 14, 30, 60, 90, 180, 365, 730, 1,825 |
 
-`expected_direction` is the direction [`pix-risk-v2` §20](../features/pix-risk-v2.md#20-expected-directions) declares for the feature: `risk_increasing`, `risk_decreasing`, or `none`. `train_range` is the `min` and `max` the preparation state records for the feature ([`pix-risk-v2` §11](../features/pix-risk-v2.md#11-fitted-standardization)), converted to the same units. Grid values outside it are clipped to it before standardization, exactly as scoring clips them, so the points beyond the range show the response scoring gives such inputs: the response at the nearest edge. Each `grid` entry has `value`, `in_train_range`, whether the value is within `train_range`, and, for `fraud` and for `legitimate`, `mean_score` and `flagged_share`, the share of records at or above the artifact's threshold, or `null` for a label without records.
+`expected_direction` is the direction [`pix-risk-v3` §20](../features/pix-risk-v3.md#20-expected-directions) declares for the feature: `risk_increasing`, `risk_decreasing`, or `none`. `train_range` is the `min` and `max` the preparation state records for the feature ([`pix-risk-v3` §11](../features/pix-risk-v3.md#11-fitted-standardization)), converted to the same units. Grid values outside it are clipped to it before standardization, exactly as scoring clips them, so the points beyond the range show the response scoring gives such inputs: the response at the nearest edge. Each `grid` entry has `value`, `in_train_range`, whether the value is within `train_range`, and, for `fraud` and for `legitimate`, `mean_score` and `flagged_share`, the share of records at or above the artifact's threshold, or `null` for a label without records.
 
 `violations` lists, for `fraud` and then for `legitimate`, each pair of consecutive grid points between which the mean score moves against the expected direction by more than `tolerance`: `label`, `from`, `to`, `in_train_range`, whether both points are within the train range, `mean_score_from`, and `mean_score_to`. A feature with direction `none` has no violations. A violation outside the train range is extrapolation; one inside it is a relation the model learned from the data.
 
 ### 4.4 Missingness
 
-The validation records are scored at baseline, as the dataset supplies them, and then with one probe applied to every record. A probe sets the features of one optional source, or of several, to 0, exactly as `pix-risk-v2` represents an unavailable source ([§11](../features/pix-risk-v2.md#11-fitted-standardization)), and, for a population, sets its discriminator to 1 as well.
+The validation records are scored at baseline, as the dataset supplies them, and then with one probe applied to every record. A probe sets the features of one optional source, or of several, to 0, exactly as `pix-risk-v3` represents an unavailable source ([§11](../features/pix-risk-v3.md#11-fitted-standardization)), and, for a population, sets its discriminator to 1 as well.
 
 | Member | Meaning |
 |---|---|
@@ -107,7 +107,7 @@ A probe measures what the model would do if the source were unavailable for ever
 
 ## 5. Consistency
 
-The encoder refuses a report that contradicts itself: a dataset with invalid records or one that is not the model's training dataset, partitions at other boundaries, sizes that are not `[62, …, 1]` or hidden layers and an output that do not follow them, inputs that are not the `pix-risk-v2` descriptor in order or whose `exercised_in_train` does not follow their train records, an `unexercised_features` list that does not list those inputs in order, a partial dependence that does not cover every standardized feature in order, another partition or tolerance, probes at another threshold or in another order, record counts that disagree between the partial dependence, the probes, and the partitions, or a cosine reported for a one-neuron layer or missing for a larger one.
+The encoder refuses a report that contradicts itself: a dataset with invalid records or one that is not the model's training dataset, partitions at other boundaries, sizes that are not `[62, …, 1]` or hidden layers and an output that do not follow them, inputs that are not the `pix-risk-v3` descriptor in order or whose `exercised_in_train` does not follow their train records, an `unexercised_features` list that does not list those inputs in order, a partial dependence that does not cover every standardized feature in order, another partition or tolerance, probes at another threshold or in another order, record counts that disagree between the partial dependence, the probes, and the partitions, or a cosine reported for a one-neuron layer or missing for a larger one.
 
 ## 6. Example
 
@@ -121,7 +121,7 @@ The report of the synthetic quick-start model, abbreviated to one input, one neu
   "dataset": {"dataset_report_version": "pix-training-dataset-report-v1", "…": "…"},
   "partitions": {"train_end": "2026-06-05T00:00:00Z", "validation_end": "2026-06-12T00:00:00Z", "…": "…"},
   "parameters": {
-    "sizes": [62, 8, 1],
+    "sizes": [65, 8, 1],
     "seed": 42,
     "inputs": [
       {"name": "amount", "kind": "standardized", "column_norm": 1.21, "change_norm": 0.46, "max_abs_change": 0.24, "train_nonzero_records": 2410, "exercised_in_train": true}
