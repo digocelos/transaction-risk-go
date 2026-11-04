@@ -47,7 +47,7 @@ go run ./cmd/train -config docs/operations/benchmark-config.json \
 go run ./cmd/promote -run "$work/run" -output "$work/model.json"
 go run ./cmd/evaluate -model "$work/model.json" -dataset "$work/data.jsonl" \
   -partition test -output "$work/evaluation.json"
-go run ./cmd/predict -model "$work/model.json" docs/contracts/examples-v2/01-complete.json
+go run ./cmd/predict -model "$work/model.json" docs/contracts/examples-v3/01-complete.json
 ```
 
 `evaluate` exits with 3 when the evaluation is incomplete, for example when
@@ -62,22 +62,22 @@ versioned files:
 | Step | Command | Reads | Writes |
 |---|---|---|---|
 | Configure | | | a [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) file |
-| Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v2.md#3-training-run) with the [`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
+| Train and select | `train` | the configuration and a [`pix-training-example-v3`](docs/contracts/pix-training-example-v3.md) dataset | a [run](docs/contracts/pix-risk-model-v2.md#3-training-run) with the [`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
 | Package | `promote` | a run | the verified artifact, where your scorer reads it |
 | Inspect | `inspect` | a run and its training dataset | a [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) report |
 | Evaluate | `evaluate` | an artifact and a dataset | a [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) report |
-| Load and score | `predict`, `scoring` | an artifact and a [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input | a score |
+| Load and score | `predict`, `scoring` | an artifact and a [`pix-payer-input-v3`](docs/contracts/pix-payer-input-v3.md) scoring input | a score |
 
 ### Data: your training data (`cmd/convert`)
 
 Prepare real training data in a spreadsheet from the
-[template](templates/training-data/pix-training-example-v2.csv), as its
+[template](templates/training-data/pix-training-example-v3.csv), as its
 [guide](templates/training-data/README.md) explains, and convert it to the
 JSON Lines dataset `train` reads:
 
 ```bash
 mkdir -p data
-cp templates/training-data/pix-training-example-v2.csv data/training.csv
+cp templates/training-data/pix-training-example-v3.csv data/training.csv
 # fill data/training.csv, then:
 go run ./cmd/convert -input data/training.csv -output data/training.jsonl
 ```
@@ -87,12 +87,12 @@ when every row is valid, reporting each problem by row and column; exit
 code 2 means invalid rows. `-separator ';'` reads spreadsheets that
 separate cells with semicolons. `data/` is ignored by git, so real payment
 data stays out of the repository
-([`pix-training-csv-v1`](docs/contracts/pix-training-csv-v1.md),
+([`pix-training-csv-v2`](docs/contracts/pix-training-csv-v2.md),
 [ADR 0021](docs/adr/0021-training-data-can-be-prepared-as-csv.md)).
 
 ### Data: synthetic datasets (`cmd/synthesize`)
 
-`synthesize` writes a synthetic `pix-training-example-v2` dataset of any
+`synthesize` writes a synthetic `pix-training-example-v3` dataset of any
 size, to try the toolkit or measure it without real data:
 
 ```bash
@@ -114,11 +114,11 @@ is a configuration whose boundaries fit it.
 ### 1–2. Configure, train, and select (`cmd/train`)
 
 `train` trains a network from a dataset that follows the
-[`pix-training-example-v2` training contract](docs/contracts/pix-training-example-v2.md):
+[`pix-training-example-v3` training contract](docs/contracts/pix-training-example-v3.md):
 one JSON Lines record per past Pix payment, embedding its
-[`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input
+[`pix-payer-input-v3`](docs/contracts/pix-payer-input-v3.md) scoring input
 and the outcome observed later. The records are prepared with the feature
-schema [`pix-risk-v2`](docs/features/pix-risk-v2.md), and a
+schema [`pix-risk-v3`](docs/features/pix-risk-v3.md), and a
 [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md)
 configuration fixes everything else about the run; version 2
 configurations are still accepted and train the same models as before
@@ -146,7 +146,7 @@ holds configurations to start from, such as
 ```json
 {
   "config_version": "pix-training-config-v3",
-  "feature_schema": "pix-risk-v2",
+  "feature_schema": "pix-risk-v3",
   "architecture": {"hidden_layers": [16, 8], "activation": "sigmoid"},
   "initialization": {"scheme": "scaled-uniform", "zero_unexercised_inputs": true},
   "algorithm": "full-batch-gradient-descent",
@@ -292,7 +292,7 @@ prepares the dataset exactly as training did, and reports:
   and the share of validation records above the threshold as the feature
   takes a fixed grid of real values: centavos, counts, days, or ratios.
   The feature schema declares the direction each feature is expected to
-  move the score ([`pix-risk-v2` §20](docs/features/pix-risk-v2.md#20-expected-directions)),
+  move the score ([`pix-risk-v3` §20](docs/features/pix-risk-v3.md#20-expected-directions)),
   and the report lists every move against it, inside and outside the
   range the train records covered.
 - **Missingness probes.** The validation metrics with each optional source
@@ -319,7 +319,7 @@ that reading before the final evaluation.
 ### 5. Evaluate (`cmd/evaluate`)
 
 `evaluate` measures a model artifact on one scope of a
-`pix-training-example-v2` dataset and writes an evaluation report
+`pix-training-example-v3` dataset and writes an evaluation report
 ([`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md)):
 
 ```bash
@@ -391,7 +391,7 @@ become validation data, and the changed model needs new held-out data
 ### 6. Load and score (`cmd/predict`, `scoring`)
 
 `predict` scores one scoring input: a JSON document that follows the
-[`pix-payer-input-v2` input contract](docs/contracts/pix-payer-input-v2.md).
+[`pix-payer-input-v3` input contract](docs/contracts/pix-payer-input-v3.md).
 It describes a Pix payment that the payer's institution is about to send,
 together with observations about the payer account, the payer device, the
 recipient, and the recipient's Pix key. Your system collects those
@@ -400,11 +400,11 @@ observations; the toolkit never queries DICT or any other source.
 The model is always explicit: pass the artifact you promoted with `-model`.
 
 ```bash
-go run ./cmd/predict -model models/pix-risk.json docs/contracts/examples-v2/04-no-pix-key.json
+go run ./cmd/predict -model models/pix-risk.json docs/contracts/examples-v3/04-no-pix-key.json
 ```
 
 ```
-{"status":"scored","contract_version":"pix-payer-input-v2","model":{"artifact_version":"pix-risk-model-v2","artifact_sha256":"909932dd…","feature_schema":"pix-risk-v2","threshold":{"policy":"fixed","value":0.5}},"score":0.012040875480930998,"notes":[{"path":"/observations/recipient_account/entry","status":"missing"},{"path":"/pix_payment/recipient_key_usage","status":"not_applicable"}],"model_notes":[]}
+{"status":"scored","contract_version":"pix-payer-input-v3","model":{"artifact_version":"pix-risk-model-v2","artifact_sha256":"909932dd…","feature_schema":"pix-risk-v2","threshold":{"policy":"fixed","value":0.5}},"score":0.012040875480930998,"notes":[{"path":"/observations/recipient_account/entry","status":"missing"},{"path":"/pix_payment/recipient_key_usage","status":"not_applicable"}],"model_notes":[]}
 ```
 
 Your hashes match only for the same build, and your score can differ in its
@@ -419,7 +419,7 @@ line from its standard output, and branch on the exit code.
 
 ```bash
 go install ./cmd/predict   # installs predict into $(go env GOPATH)/bin
-predict -model models/pix-risk.json < docs/contracts/examples-v2/01-complete.json
+predict -model models/pix-risk.json < docs/contracts/examples-v3/01-complete.json
 ```
 
 The score ranges from 0 to 1 and ranks payments by risk. It is not a
@@ -429,7 +429,7 @@ regulatory rules and operational decisions stay in your own systems. The
 metadata for your own rules.
 
 `predict` loads and validates the model before reading the input, then
-validates the input, prepares its `pix-risk-v2` features exactly as
+validates the input, prepares its `pix-risk-v3` features exactly as
 training does, and scores them. Standard output always holds exactly one
 JSON object, followed by a newline, and every object identifies the model:
 
@@ -448,9 +448,9 @@ reported in `notes`, never replaced by an invented value. The model also
 never extrapolates: a value beyond the range its training data covered is
 clipped to that range before scoring, and reported in `model_notes`, as is
 a feature that no training record exercised
-([`pix-risk-v2` §11](docs/features/pix-risk-v2.md#11-fitted-standardization),
+([`pix-risk-v3` §11](docs/features/pix-risk-v3.md#11-fitted-standardization),
 [ADR 0023](docs/adr/0023-the-preparation-state-bounds-what-the-network-receives.md)).
-[`docs/contracts/examples-v2/`](docs/contracts/examples-v2/) holds 20
+[`docs/contracts/examples-v3/`](docs/contracts/examples-v3/) holds 21
 scoring inputs, each with its expected preparation result.
 
 #### From Go (`scoring`)
@@ -464,7 +464,7 @@ if err != nil {
 	return err
 }
 
-result, err := scorer.Score(document) // a pix-payer-input-v2 document
+result, err := scorer.Score(document) // a pix-payer-input-v3 document
 if err != nil {
 	return err // the scorer failed; invalid inputs are results
 }
@@ -517,9 +517,9 @@ claims more than its identifier says:
 
 | Identifier | What it identifies |
 |---|---|
-| [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) | The scoring input an integrator supplies. |
-| [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) | A training record: a scoring input with its outcome. |
-| [`pix-risk-v2`](docs/features/pix-risk-v2.md) | The feature schema: the 62 ordered features, how they are prepared, the layout of the fitted preparation state, the clipping to the train range, and the model notes. Replaces `pix-risk-v1` (ADR 0023). |
+| [`pix-payer-input-v3`](docs/contracts/pix-payer-input-v3.md) | The scoring input an integrator supplies. Replaces `pix-payer-input-v2`, adding the amount initiated in 24 hours (ADR 0024). |
+| [`pix-training-example-v3`](docs/contracts/pix-training-example-v3.md) | A training record: a scoring input with its outcome. |
+| [`pix-risk-v3`](docs/features/pix-risk-v3.md) | The feature schema: the 65 ordered features, how they are prepared, the layout of the fitted preparation state, the clipping to the train range, and the model notes. Replaces `pix-risk-v2` (ADR 0024), which replaced `pix-risk-v1` (ADR 0023). |
 | [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) | A training configuration; its canonical SHA-256 identifies it. [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) is still accepted and trains the same models as before (ADR 0022). |
 | [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) | The report of a training run. |
 | [`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md) | The layout of a model artifact. |
@@ -534,31 +534,34 @@ schema's, recorded inside the artifact; what produced a model is identified
 by the SHA-256 of its configuration, dataset, and report, and the artifact
 itself by the SHA-256 of its bytes.
 
-## Migrating from the educational version 1
+## Migrating between versions
 
 The first version of this repository was an educational workflow: a demo
 that trained a four-feature network on fictional data, a committed
 `model.json`, and `predict` reading it. It is removed, with no
-compatibility (ADR 0013, ADR 0020):
+compatibility (ADR 0013, ADR 0020), and the version 1 documents remain in
+the repository history at commit
+[`6babe7c`](https://github.com/digocelos/transaction-risk-go/tree/6babe7c124a26d1c2426ef4b55b2b6c338724b5d).
+Since then each contract has moved on without coexistence, and a build
+accepts one version of each:
 
-- `cmd/demo`, the committed `model.json`, the `transaction` package, and the
-  `nn` model format version 1 are gone. `predict` requires `-model` and an
-  artifact from `train` and `promote`.
-- `pix-payer-input-v1`, `pix-training-example-v1`, and
-  `transaction-features-v1` are no longer accepted. Version 1 documents are
-  invalid with `unsupported_contract_version` or
-  `unsupported_training_example_version`. Move inputs to
-  `pix-payer-input-v2` with its
-  [migration notes](docs/contracts/pix-payer-input-v2.md#18-migration-notes),
-  and retrain.
-- The version 1 documents remain in the repository history, at commit
-  [`6babe7c`](https://github.com/digocelos/transaction-risk-go/tree/6babe7c124a26d1c2426ef4b55b2b6c338724b5d).
+- `pix-payer-input-v3` replaces `pix-payer-input-v2`, adding the amount
+  initiated in the last 24 hours; `pix-training-example-v3` and
+  `pix-training-csv-v2` follow
+  ([migration](docs/contracts/pix-payer-input-v3.md#8-migration-from-version-2),
+  ADR 0024).
+- `pix-risk-v3` replaces `pix-risk-v2`, which replaced `pix-risk-v1`
+  (ADR 0023, ADR 0024); `pix-risk-model-v2` replaces `pix-risk-model-v1`.
+  A model trained under an earlier schema is retrained from its run's
+  configuration and a dataset in the current version.
+- `pix-training-config-v3` extends `pix-training-config-v2`, which stays
+  accepted with its identity (ADR 0022).
 
 ## Documentation
 
 - [`docs/contracts/`](docs/contracts/): the normative contracts and their
   examples.
-- [`docs/features/pix-risk-v2.md`](docs/features/pix-risk-v2.md): the
+- [`docs/features/pix-risk-v3.md`](docs/features/pix-risk-v3.md): the
   feature schema.
 - [`docs/adr/`](docs/adr/): the architecture decisions.
 - [`docs/operations/`](docs/operations/): operating limits and
