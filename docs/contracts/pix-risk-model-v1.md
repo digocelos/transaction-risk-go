@@ -1,6 +1,6 @@
 # Model artifact `pix-risk-model-v1` and training runs `pix-risk-run-v1`
 
-**Status:** Normative for `pix-risk-model-v1` and `pix-risk-run-v1`.
+**Status:** Superseded by [`pix-risk-model-v2`](pix-risk-model-v2.md), which replaces `pix-risk-model-v1` without coexistence (ADR 0023); `pix-risk-run-v1` is unchanged and specified there. This document remains the specification of version 1.
 
 ## 1. Scope
 

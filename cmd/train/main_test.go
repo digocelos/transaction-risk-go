@@ -190,7 +190,7 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 	}
 
 	if _, err := artifact.Network.Predict(make([]float64, 62)); err != nil {
-		t.Errorf("the trained network does not take the 62 pix-risk-v1 features: %v", err)
+		t.Errorf("the trained network does not take the 62 pix-risk-v2 features: %v", err)
 	}
 
 	if !strings.Contains(r.stderr, "selected epoch 5000 of 5000 trained") {
@@ -256,7 +256,7 @@ func TestTrainStopsOnInvalidDataset(t *testing.T) {
 	switch {
 	case invalid.Status != "invalid_dataset":
 		t.Errorf("status = %q", invalid.Status)
-	case invalid.Dataset.FeatureSchema != "pix-risk-v1" || invalid.Dataset.TrainingExampleVersion != "pix-training-example-v2":
+	case invalid.Dataset.FeatureSchema != "pix-risk-v2" || invalid.Dataset.TrainingExampleVersion != "pix-training-example-v2":
 		t.Errorf("dataset report = %+v", invalid.Dataset)
 	case invalid.Dataset.Records != records{Total: 10, Usable: 6, Invalid: 2, Insufficient: 1, Immature: 1}:
 		t.Errorf("records = %+v", invalid.Dataset.Records)

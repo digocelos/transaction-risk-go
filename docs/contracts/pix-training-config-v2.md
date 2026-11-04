@@ -21,7 +21,7 @@ Every member is required and none is nullable.
 | Member | Type | Rules |
 |---|---|---|
 | `config_version` | string | `pix-training-config-v2`. Any other value, including `pix-training-config-v1`, is rejected with `unsupported_config_version`. |
-| `feature_schema` | closed enumeration | `pix-risk-v1`. The network's input size is the feature count of this schema, 62. |
+| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v2`; `pix-risk-v1`, which the toolkit no longer implements, is rejected (ADR 0023). The network's input size is the feature count of this schema, 62. |
 | `architecture` | object | See [3.1](#31-architecture). |
 | `algorithm` | closed enumeration | `full-batch-gradient-descent`: every epoch is one gradient descent step over all usable train records, in dataset line order. |
 | `loss` | closed enumeration | `mean-squared-error`, averaged over records and outputs. |

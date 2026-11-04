@@ -72,7 +72,7 @@ func Inspect(ctx context.Context, model []byte, config trainingconfig.Config, da
 	}
 
 	layers := artifact.Network.Layers()
-	initial, _, err := training.InitialNetwork(config, prepared.Train)
+	initial, _, err := training.InitialNetwork(config, artifact.State)
 	if err != nil {
 		return Report{}, err
 	}
@@ -106,7 +106,7 @@ func Inspect(ctx context.Context, model []byte, config trainingconfig.Config, da
 		Partitions:          prepared.Partitions,
 		Parameters:          parameters,
 		UnexercisedFeatures: unexercised,
-		PartialDependence:   partialDependence(artifact, prepared.Train, validation, counts),
+		PartialDependence:   partialDependence(artifact, validation, counts),
 		Missingness:         missingness(artifact, validation, counts),
 	}, nil
 }
@@ -168,7 +168,7 @@ func inspectParameters(artifact modelartifact.Artifact, seed int64, layers, init
 			ChangeNorm:          math.Sqrt(change),
 			MaxAbsChange:        maxChange,
 			TrainNonzeroRecords: nonzero,
-			ExercisedInTrain:    nonzero > 0,
+			ExercisedInTrain:    artifact.State.Features[j].ExercisedInTrain,
 		}
 	}
 
@@ -267,7 +267,7 @@ func maxAbsCosine(rows [][]float64) *Cosine {
 // partialDependence measures the score of every validation record as each
 // standardized feature takes the values of its grid, in real units, with
 // its indicator forced to known.
-func partialDependence(artifact modelartifact.Artifact, train, validation []training.PreparedExample, counts trainingdata.LabelCounts) PartialDependence {
+func partialDependence(artifact modelartifact.Artifact, validation []training.PreparedExample, counts trainingdata.LabelCounts) PartialDependence {
 	descriptor := pixrisk.Descriptor()
 	layers := artifact.Network.Layers()
 	threshold := artifact.Threshold.Value
@@ -280,21 +280,15 @@ func partialDependence(artifact modelartifact.Artifact, train, validation []trai
 		s := scaleOf(feature.Name)
 		state := artifact.State.Features[j]
 
-		// The train range, in raw units, over the records where the
-		// feature is available.
-		trainRange := Range{Min: math.Inf(1), Max: math.Inf(-1)}
-		for _, example := range train {
-			if feature.Indicator != pixrisk.Always && example.Prepared.Values[feature.Indicator] != 1 {
-				continue
-			}
-			raw := s.raw(example.Prepared.Values[j])
-			trainRange.Min = math.Min(trainRange.Min, raw)
-			trainRange.Max = math.Max(trainRange.Max, raw)
-		}
+		// The train range, in raw units, as the preparation state records
+		// it; scoring clips to it before standardizing.
+		trainRange := Range{Min: s.raw(*state.Min), Max: s.raw(*state.Max)}
 
 		grid := make([]GridPoint, len(s.grid))
 		for g, raw := range s.grid {
-			standardized := (s.transform(raw) - state.Mean) / state.Scale
+			// The grid value as scoring would see it: clipped to the train
+			// range, then standardized.
+			standardized := (math.Min(math.Max(s.transform(raw), *state.Min), *state.Max) - state.Mean) / state.Scale
 			var fraudSum, legitimateSum float64
 			var fraudFlagged, legitimateFlagged int
 			for _, example := range validation {

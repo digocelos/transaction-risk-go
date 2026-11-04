@@ -22,11 +22,12 @@ const (
 )
 
 type scoredOutput struct {
-	Status          string         `json:"status"`
-	ContractVersion string         `json:"contract_version"`
-	Model           scoring.Model  `json:"model"`
-	Score           float64        `json:"score"`
-	Notes           []pixrisk.Note `json:"notes"`
+	Status          string              `json:"status"`
+	ContractVersion string              `json:"contract_version"`
+	Model           scoring.Model       `json:"model"`
+	Score           float64             `json:"score"`
+	Notes           []pixrisk.Note      `json:"notes"`
+	ModelNotes      []pixrisk.ModelNote `json:"model_notes"`
 }
 
 type issueOutput struct {
@@ -146,6 +147,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		Model:           result.Model,
 		Score:           *result.Score,
 		Notes:           result.Notes,
+		ModelNotes:      result.ModelNotes,
 	})
 }
 

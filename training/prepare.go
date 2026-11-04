@@ -57,7 +57,7 @@ func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluatio
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err

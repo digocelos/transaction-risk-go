@@ -1,7 +1,7 @@
 {
   "dataset_report_version": "pix-training-dataset-report-v1",
   "training_example_version": "pix-training-example-v2",
-  "feature_schema": "pix-risk-v1",
+  "feature_schema": "pix-risk-v2",
   "label_maturity_days": 90,
   "dataset_sha256": "474b25919299f63f2b64358696887613c52155eb87963ac2c654d31b476d8c52",
   "dataset_bytes": 2715,

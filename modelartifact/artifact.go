@@ -1,5 +1,5 @@
 // Package modelartifact encodes and decodes the trained model artifact
-// pix-risk-model-v1, as specified in docs/contracts/pix-risk-model-v1.md:
+// pix-risk-model-v2, as specified in docs/contracts/pix-risk-model-v2.md:
 // everything the toolkit needs to score pix-payer-input-v2 inputs without
 // training, and the identities of the configuration, dataset, and report
 // that produced it. Its SHA-256 values detect accidental or deliberate
@@ -30,8 +30,9 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
-// Version is the artifact version.
-const Version = "pix-risk-model-v1"
+// Version is the artifact version. It replaces pix-risk-model-v1, whose
+// preparation state had no train range and no exercised flags (ADR 0023).
+const Version = "pix-risk-model-v2"
 
 // Unknown marks software information the build does not carry.
 const Unknown = "unknown"

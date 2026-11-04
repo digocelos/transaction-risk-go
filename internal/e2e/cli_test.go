@@ -115,7 +115,7 @@ func TestFailuresWriteNothing(t *testing.T) {
 	retired := write(t, filepath.Join(work, "retired.jsonl"),
 		bytes.ReplaceAll(data, []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`)))
 	otherSchema := write(t, filepath.Join(work, "other-schema.json"),
-		bytes.Replace(read(t, filepath.Join(root, benchmarkConfig)), []byte(`"pix-risk-v1"`), []byte(`"transaction-features-v1"`), 1))
+		bytes.Replace(read(t, filepath.Join(root, benchmarkConfig)), []byte(`"pix-risk-v2"`), []byte(`"transaction-features-v1"`), 1))
 
 	artifact := read(t, model)
 	// One weight changes and the artifact stays valid JSON, so only its

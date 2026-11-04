@@ -1,7 +1,7 @@
 // Package scoring scores payer-side Pix payments with a trained
-// pix-risk-model-v1 artifact. A Scorer loads and validates one explicit
+// pix-risk-model-v2 artifact. A Scorer loads and validates one explicit
 // artifact once and then scores any number of pix-payer-input-v2 documents:
-// it validates each document, prepares its pix-risk-v1 features with the
+// it validates each document, prepares its pix-risk-v2 features with the
 // artifact's frozen preparation state, and runs the network. It never
 // trains, refits, or looks anything up, and it never reads the system
 // clock (ADR 0018).
@@ -41,18 +41,22 @@ type Model struct {
 }
 
 // Result is the outcome of scoring one document. Every result identifies
-// the model. A scored result has the contract version, the score, and the
-// preparation notes of the optional observations that were not available.
-// An invalid input has the issues that break the contract and no contract
-// version. An insufficient input is valid, has the contract version, and
-// has the blockers that keep pix-risk-v1 from preparing it. Score is nil
-// unless the document was scored.
+// the model. A scored result has the contract version, the score, the
+// preparation notes of the optional observations that were not available,
+// which depend on the document alone, and the model notes of the features
+// the preparation state clipped to the train range or that no train record
+// exercised, which depend on the model. An invalid input has the issues
+// that break the contract and no contract version. An insufficient input
+// is valid, has the contract version, and has the blockers that keep
+// pix-risk-v2 from preparing it. Score is nil unless the document was
+// scored.
 type Result struct {
 	Status          string
 	ContractVersion string
 	Model           Model
 	Score           *float64
 	Notes           []pixrisk.Note
+	ModelNotes      []pixrisk.ModelNote
 	Issues          []pixinput.Issue
 	Blockers        []pixrisk.Blocker
 }
@@ -107,7 +111,7 @@ func (s *Scorer) Model() Model {
 	return s.model
 }
 
-// Score validates a pix-payer-input-v2 document, prepares its pix-risk-v1
+// Score validates a pix-payer-input-v2 document, prepares its pix-risk-v2
 // features, and scores them. An invalid or insufficient document is a
 // result, not an error; an error means the scorer itself failed.
 func (s *Scorer) Score(document []byte) (Result, error) {
@@ -139,7 +143,7 @@ func (s *Scorer) Score(document []byte) (Result, error) {
 		return Result{}, err
 	}
 
-	values, err := s.artifact.State.Apply(prepared)
+	values, modelNotes, err := s.artifact.State.ApplyWithNotes(prepared)
 	if err != nil {
 		return Result{}, fmt.Errorf("apply the preparation state: %w", err)
 	}
@@ -153,6 +157,7 @@ func (s *Scorer) Score(document []byte) (Result, error) {
 	result.Status = StatusScored
 	result.Score = &score
 	result.Notes = prepared.Notes
+	result.ModelNotes = modelNotes
 
 	return result, nil
 }

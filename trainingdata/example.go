@@ -109,9 +109,9 @@ type FeatureSchema struct {
 	Blockers               func(pixinput.ScoringInput) ([]Blocker, error)
 }
 
-// PixRiskV1 classifies pix-training-example-v2 records with pix-risk-v1: a
+// PixRiskV2 classifies pix-training-example-v2 records with pix-risk-v2: a
 // record is insufficient when a required fact is missing or stale.
-var PixRiskV1 = FeatureSchema{
+var PixRiskV2 = FeatureSchema{
 	Name:                   pixrisk.Schema,
 	TrainingExampleVersion: TrainingExampleV2,
 	ContractVersion:        pixinput.ContractV2,

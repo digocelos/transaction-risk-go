@@ -190,10 +190,10 @@ func TestArtifactRecordsItsIdentities(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		`"artifact_version": "pix-risk-model-v1"`,
+		`"artifact_version": "pix-risk-model-v2"`,
 		`"scoring_input": "pix-payer-input-v2"`,
 		`"training_example": "pix-training-example-v2"`,
-		`"feature_schema": "pix-risk-v1"`,
+		`"feature_schema": "pix-risk-v2"`,
 		`"config_version": "pix-training-config-v2"`,
 		`"report_version": "pix-training-report-v2"`,
 		`"revision": "0123abc"`,
@@ -266,7 +266,7 @@ func TestDecodeRejectsTamperedOrInvalidArtifacts(t *testing.T) {
 			object(v, "network")["sizes"] = []any{62, 5, 1}
 		}),
 		"unsupported version": tamper(t, data, func(v map[string]any) {
-			v["artifact_version"] = "pix-risk-model-v2"
+			v["artifact_version"] = "pix-risk-model-v1"
 		}),
 		"other contract": tamper(t, data, func(v map[string]any) {
 			object(v, "contracts")["scoring_input"] = "pix-payer-input-v1"
@@ -301,8 +301,8 @@ func TestDecodeRejectsTamperedOrInvalidArtifacts(t *testing.T) {
 		})), "7777", "1e999", 1)),
 		"truncated":     data[:len(data)/2],
 		"trailing data": append(append([]byte{}, data...), []byte("{}")...),
-		"duplicate member": []byte(strings.Replace(string(data), `"artifact_version": "pix-risk-model-v1",`,
-			`"artifact_version": "pix-risk-model-v1", "artifact_version": "pix-risk-model-v1",`, 1)),
+		"duplicate member": []byte(strings.Replace(string(data), `"artifact_version": "pix-risk-model-v2",`,
+			`"artifact_version": "pix-risk-model-v2", "artifact_version": "pix-risk-model-v2",`, 1)),
 		"invalid UTF-8": append([]byte{0xff}, data...),
 	}
 

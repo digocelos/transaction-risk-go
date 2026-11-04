@@ -507,11 +507,11 @@ func TestEvaluateRecordsIdentities(t *testing.T) {
 	report := evaluate(t, model, dataset, Options{MaxRecords: maxRecords, Scope: PartitionScope(evaluation.Test)})
 
 	want := Model{
-		ArtifactVersion:       "pix-risk-model-v1",
+		ArtifactVersion:       "pix-risk-model-v2",
 		ArtifactSHA256:        digest(model),
 		Software:              software,
 		Contracts:             Contracts{ScoringInput: "pix-payer-input-v2", TrainingExample: "pix-training-example-v2"},
-		FeatureSchema:         "pix-risk-v1",
+		FeatureSchema:         "pix-risk-v2",
 		ConfigVersion:         "pix-training-config-v2",
 		ConfigSHA256:          configSHA256,
 		TrainingReportVersion: "pix-training-report-v2",

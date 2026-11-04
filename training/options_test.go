@@ -76,7 +76,7 @@ func TestRunZeroesUnexercisedInputs(t *testing.T) {
 	data := read(t, pixRiskFixture)
 	prepared := prepareDataset(t, data)
 
-	unexercised := UnexercisedFeatures(prepared.Train)
+	unexercised := prepared.State.Unexercised()
 	if len(unexercised) == 0 {
 		t.Fatal("the fixture exercises every feature")
 	}
@@ -100,7 +100,7 @@ func TestRunZeroesUnexercisedInputs(t *testing.T) {
 	zeroing.ZeroUnexercisedInputs = true
 	zeroed := run(t, data, zeroing)
 
-	initial, initialUnexercised, err := InitialNetwork(zeroing, prepared.Train)
+	initial, initialUnexercised, err := InitialNetwork(zeroing, prepared.State)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +141,7 @@ func TestInitialNetworkFollowsTheConfiguration(t *testing.T) {
 	scaled := v3()
 	scaled.Initialization = trainingconfig.InitializationScaledUniform
 
-	network, _, err := InitialNetwork(scaled, prepared.Train)
+	network, _, err := InitialNetwork(scaled, prepared.State)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -150,7 +150,7 @@ func TestInitialNetworkFollowsTheConfiguration(t *testing.T) {
 		t.Error("InitialNetwork() is not the scaled network of the seed")
 	}
 
-	uniform, _, _ := InitialNetwork(v3(), prepared.Train)
+	uniform, _, _ := InitialNetwork(v3(), prepared.State)
 	plain, _ := nn.NewNetwork(scaled.Seed, scaled.Sizes()...)
 	if !reflect.DeepEqual(uniform.Layers(), plain.Layers()) {
 		t.Error("InitialNetwork() with uniform-0.5 is not NewNetwork")
@@ -268,7 +268,7 @@ func TestAvailabilityDropoutMasksSources(t *testing.T) {
 	// With every source masked in every epoch, the model is the one
 	// trained on records without any optional source.
 	allResult := run(t, data, all)
-	masked, _, _ := InitialNetwork(all, prepared.Train)
+	masked, _, _ := InitialNetwork(all, prepared.State)
 	samples := make([]nn.Sample, len(prepared.Train))
 	for i, example := range prepared.Train {
 		values := append([]float64(nil), example.Values...)

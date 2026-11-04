@@ -144,7 +144,7 @@ func validExamples(t *testing.T) []byte {
 	t.Helper()
 
 	var out bytes.Buffer
-	_, err := trainingdata.Scan(bytes.NewReader(read(t, filepath.Join(examplesDir, "dataset.jsonl"))), trainingdata.PixRiskV1,
+	_, err := trainingdata.Scan(bytes.NewReader(read(t, filepath.Join(examplesDir, "dataset.jsonl"))), trainingdata.PixRiskV2,
 		trainingdata.DefaultMaxRecords, func(r trainingdata.Record) error {
 			if r.Category != trainingdata.Invalid {
 				line := bytes.Split(read(t, filepath.Join(examplesDir, "dataset.jsonl")), []byte("\n"))[r.Line-1]
@@ -230,7 +230,7 @@ func TestConvertSummarizesWhatTrainReads(t *testing.T) {
 		t.Error("the conversion of a compact dataset is not byte for byte the same")
 	}
 
-	scanned, err := trainingdata.Scan(bytes.NewReader(converted), trainingdata.PixRiskV1, trainingdata.DefaultMaxRecords,
+	scanned, err := trainingdata.Scan(bytes.NewReader(converted), trainingdata.PixRiskV2, trainingdata.DefaultMaxRecords,
 		func(trainingdata.Record) error { return nil })
 	if err != nil {
 		t.Fatal(err)
