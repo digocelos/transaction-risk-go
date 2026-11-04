@@ -122,7 +122,7 @@ func Evaluate(ctx context.Context, model []byte, dataset io.Reader, options Opti
 
 	return Report{
 		Software:              modelartifact.SoftwareFromBuild(),
-		Model:                 identify(artifact, sha256Hex(model)),
+		Model:                 Identify(artifact, sha256Hex(model)),
 		Dataset:               scanned.dataset,
 		SameDatasetAsTraining: sameDataset,
 		Scope:                 scope.report(),
@@ -303,9 +303,10 @@ func referenceKeys(ctx context.Context, reference io.Reader, trained modelartifa
 	return keys, nil
 }
 
-// identify describes a decoded artifact. Decoding accepts only the
+// Identify describes a decoded artifact by the SHA-256 of its exact bytes
+// and what produced it, as the artifact records. Decoding accepts only the
 // versions it names.
-func identify(artifact modelartifact.Artifact, artifactSHA256 string) Model {
+func Identify(artifact modelartifact.Artifact, artifactSHA256 string) Model {
 	trained := artifact.Training
 
 	return Model{

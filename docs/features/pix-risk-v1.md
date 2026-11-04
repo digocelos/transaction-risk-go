@@ -558,3 +558,80 @@ No compatibility with the v1 workflow is kept once the migration ends (ADR 0013)
 5. `pix-payer-input-v1`, `pix-training-example-v1`, `transaction-features-v1`, `cmd/demo`, and `model.json` are removed (#33), after which the toolkit accepts version 2 only.
 
 The migration is complete.
+
+## 20. Expected directions
+
+This section is informative. It declares, for each feature, the direction in which a payer-side Pix fraud model is expected to move its score as the feature grows, so that an inspection ([`pix-model-inspection-v1`](../contracts/pix-model-inspection-v1.md)) can report where a trained model moves against it. The directions are expectations about Pix fraud, not properties of any model, and they change nothing about how `pix-risk-v1` prepares features. A feature with `none` has no expected direction: either direction can be legitimate, or the feature is an indicator or a cyclic value whose meaning depends on other features.
+
+| # | Name | Expected direction |
+|---|---|---|
+| 0 | `amount` | `risk_increasing` |
+| 1 | `recipient_legal_person` | `none` |
+| 2 | `no_pix_key` | `none` |
+| 3 | `no_payer_device` | `none` |
+| 4 | `local_time_sin` | `none` |
+| 5 | `local_time_cos` | `none` |
+| 6 | `limit_period_nighttime` | `none` |
+| 7 | `limit_period_daily` | `none` |
+| 8 | `limit_period_none` | `none` |
+| 9 | `settled_count_90d` | `risk_decreasing` |
+| 10 | `initiated_count_24h` | `risk_increasing` |
+| 11 | `recipient_payments_365d` | `risk_decreasing` |
+| 12 | `amount_to_median_90d` | `risk_increasing` |
+| 13 | `amount_to_median_90d_known` | `none` |
+| 14 | `limit_utilization` | `risk_increasing` |
+| 15 | `limit_utilization_known` | `none` |
+| 16 | `limit_zero` | `none` |
+| 17 | `recipient_pre_registered` | `risk_decreasing` |
+| 18 | `recipient_pre_registered_known` | `none` |
+| 19 | `device_settled_count_90d` | `risk_decreasing` |
+| 20 | `device_settled_count_90d_known` | `none` |
+| 21 | `device_registered` | `risk_decreasing` |
+| 22 | `device_registered_known` | `none` |
+| 23 | `recipient_account_age` | `risk_decreasing` |
+| 24 | `recipient_account_age_known` | `none` |
+| 25 | `key_link_age` | `risk_decreasing` |
+| 26 | `key_ownership_age` | `risk_decreasing` |
+| 27 | `key_type_cpf` | `none` |
+| 28 | `key_type_cnpj` | `none` |
+| 29 | `key_type_phone` | `none` |
+| 30 | `key_type_email` | `none` |
+| 31 | `key_type_evp` | `none` |
+| 32 | `key_type_other` | `none` |
+| 33 | `key_entry_known` | `none` |
+| 34 | `person_settlements_d90` | `none` |
+| 35 | `person_settlements_d90_known` | `none` |
+| 36 | `person_settlements_m12` | `none` |
+| 37 | `person_settlements_m12_known` | `none` |
+| 38 | `person_fraud_markers_d90` | `risk_increasing` |
+| 39 | `person_fraud_markers_d90_known` | `none` |
+| 40 | `person_fraud_markers_m12` | `risk_increasing` |
+| 41 | `person_fraud_markers_m12_known` | `none` |
+| 42 | `person_fraud_reporters_m12` | `risk_increasing` |
+| 43 | `person_fraud_reporters_m12_known` | `none` |
+| 44 | `person_open_report_reporters` | `risk_increasing` |
+| 45 | `person_open_report_reporters_known` | `none` |
+| 46 | `person_registered_accounts` | `none` |
+| 47 | `person_registered_accounts_known` | `none` |
+| 48 | `key_settlements_d90` | `none` |
+| 49 | `key_settlements_d90_known` | `none` |
+| 50 | `key_settlements_m12` | `none` |
+| 51 | `key_settlements_m12_known` | `none` |
+| 52 | `key_fraud_markers_d90` | `risk_increasing` |
+| 53 | `key_fraud_markers_d90_known` | `none` |
+| 54 | `key_fraud_markers_m12` | `risk_increasing` |
+| 55 | `key_fraud_markers_m12_known` | `none` |
+| 56 | `key_fraud_reporters_m12` | `risk_increasing` |
+| 57 | `key_fraud_reporters_m12_known` | `none` |
+| 58 | `key_open_report_reporters` | `risk_increasing` |
+| 59 | `key_open_report_reporters_known` | `none` |
+| 60 | `key_distinct_accounts_m12` | `risk_increasing` |
+| 61 | `key_distinct_accounts_m12_known` | `none` |
+
+The rationale, by group:
+
+- **Amount and velocity increase risk.** A larger amount, an amount far above the payer's median, a payment that drains the period limit, and many payments initiated in 24 hours are the signatures of social engineering, remote access, and account takeover.
+- **Established histories decrease risk.** A payer with many settled payments, a device with its own history and a registration, a recipient the payer has paid before or pre-registered, and a recipient account or key that has existed for years are the ordinary case; fraud campaigns use young accounts and fresh keys.
+- **DICT fraud evidence increases risk.** Fraud markers, distinct reporters, open infraction reports, and a key linked to several accounts in a year are the directory's own signals of mule and scammer activity.
+- **Settlement volumes and registered accounts have no direction.** A large merchant and an investment-scam aggregator both settle thousands of payments, and a person with several registered accounts can be either.
+- **Indicators, key types, and the time of day have no direction.** Their meaning depends on the other features: the absence of a key or a device is a population, not a risk level, a key type is a context, and the local time only matters together with the amount and the limit period.
