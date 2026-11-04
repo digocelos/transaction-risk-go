@@ -333,3 +333,237 @@ func TestTrainBatchIsTrainBatchContext(t *testing.T) {
 		t.Errorf("TrainBatch = %v, %v; TrainBatchContext = %v, %v", lossA, errA, lossB, errB)
 	}
 }
+
+// crossEntropy is the mean binary cross-entropy over samples and outputs,
+// computed with Predict.
+func crossEntropy(t *testing.T, network *Network, samples []Sample) float64 {
+	t.Helper()
+
+	total, count := 0.0, 0
+	for _, sample := range samples {
+		outputs, err := network.Predict(sample.Inputs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, output := range outputs {
+			total += LossValue(BinaryCrossEntropy, output, sample.Targets[i])
+			count++
+		}
+	}
+
+	return total / float64(count)
+}
+
+// decay is the weight decay term (l2 / 2)·Σ weight², over weights only.
+func decay(network *Network, l2 float64) float64 {
+	total := 0.0
+	for _, layer := range network.layers {
+		for _, weights := range layer.weights {
+			for _, weight := range weights {
+				total += weight * weight
+			}
+		}
+	}
+	return l2 / 2 * total
+}
+
+// With the binary cross-entropy and weight decay, the update of one Train
+// step is −learningRate times the gradient of the cross-entropy plus the
+// decay term, which central differences estimate independently; biases
+// receive no decay.
+func TestTrainFollowsTheNumericalGradientOfEveryLoss(t *testing.T) {
+	const learningRate, l2 = 0.5, 0.01
+
+	cases := map[string]struct {
+		options   Options
+		objective func(*Network) float64
+	}{
+		"cross-entropy": {Options{Loss: BinaryCrossEntropy}, func(n *Network) float64 { return crossEntropy(t, n, gradientSamples) }},
+		"cross-entropy with decay": {Options{Loss: BinaryCrossEntropy, L2: l2}, func(n *Network) float64 {
+			return crossEntropy(t, n, gradientSamples) + decay(n, l2)
+		}},
+		"squared error with decay": {Options{Loss: MeanSquaredError, L2: l2}, func(n *Network) float64 {
+			return loss(t, n, gradientSamples) + decay(n, l2)
+		}},
+		"default options": {Options{}, func(n *Network) float64 { return loss(t, n, gradientSamples) }},
+	}
+
+	for name, c := range cases {
+		t.Run(name, func(t *testing.T) {
+			network := smallNetwork(t)
+			before := clone(network)
+
+			reported, err := network.Train(context.Background(), gradientSamples, learningRate, c.options)
+			if err != nil {
+				t.Fatalf("Train() error = %v", err)
+			}
+
+			// The reported loss excludes the decay term.
+			want := c.objective(before) - decay(before, c.options.L2)
+			if math.Abs(reported-want) > 1e-12 {
+				t.Errorf("reported loss = %v, want %v", reported, want)
+			}
+
+			probe := clone(before)
+			params, beforeParams, afterParams := parameters(probe), parameters(before), parameters(network)
+
+			for i, param := range params {
+				original := *param
+
+				*param = original + gradientStep
+				plus := c.objective(probe)
+				*param = original - gradientStep
+				minus := c.objective(probe)
+				*param = original
+
+				numerical := (plus - minus) / (2 * gradientStep)
+				backpropagated := (*beforeParams[i] - *afterParams[i]) / learningRate
+
+				if math.Abs(numerical-backpropagated) > gradientAbsoluteTolerance+gradientRelativeTolerance*math.Abs(numerical) {
+					t.Errorf("parameter %d: gradient = %v, finite differences = %v", i, backpropagated, numerical)
+				}
+			}
+		})
+	}
+}
+
+// The cross-entropy value stays finite at saturated outputs, and its
+// gradient does not vanish there.
+func TestBinaryCrossEntropyIsFiniteWhenSaturated(t *testing.T) {
+	if v := LossValue(BinaryCrossEntropy, 0, 1); math.IsInf(v, 0) || v < 30 {
+		t.Errorf("LossValue(0, 1) = %v, want a large finite value", v)
+	}
+	if v := LossValue(BinaryCrossEntropy, 1, 0); math.IsInf(v, 0) || v < 30 {
+		t.Errorf("LossValue(1, 0) = %v, want a large finite value", v)
+	}
+	if v := LossValue(BinaryCrossEntropy, 0.5, 1); math.Abs(v-math.Ln2) > 1e-15 {
+		t.Errorf("LossValue(0.5, 1) = %v, want ln 2", v)
+	}
+	if v := LossValue(MeanSquaredError, 0.25, 1); v != 0.5625 {
+		t.Errorf("LossValue squared = %v", v)
+	}
+
+	// A network whose output is saturated still moves under the
+	// cross-entropy, while the squared error barely does.
+	saturated, err := FromLayers(1, []Layer{{Weights: [][]float64{{40}}, Biases: []float64{0}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sample := []Sample{{Inputs: []float64{1}, Targets: []float64{0}}}
+
+	squared := clone(saturated)
+	if _, err := squared.Train(context.Background(), sample, 1, Options{}); err != nil {
+		t.Fatal(err)
+	}
+	entropy := clone(saturated)
+	if _, err := entropy.Train(context.Background(), sample, 1, Options{Loss: BinaryCrossEntropy}); err != nil {
+		t.Fatal(err)
+	}
+	if moved := 40 - entropy.layers[0].weights[0][0]; math.Abs(moved-1) > 1e-9 {
+		t.Errorf("cross-entropy moved the weight by %v, want 1 (output − target)", moved)
+	}
+	if moved := 40 - squared.layers[0].weights[0][0]; moved > 1e-12 {
+		t.Errorf("squared error moved the saturated weight by %v, want about 0", moved)
+	}
+}
+
+// Invalid options are rejected before any parameter changes.
+func TestTrainRejectsInvalidOptions(t *testing.T) {
+	for name, options := range map[string]Options{
+		"unknown loss":   {Loss: "hinge"},
+		"negative decay": {L2: -0.1},
+		"infinite decay": {L2: math.Inf(1)},
+		"NaN decay":      {L2: math.NaN()},
+	} {
+		network := smallNetwork(t)
+		before := clone(network)
+		if _, err := network.Train(context.Background(), gradientSamples, 0.5, options); err == nil {
+			t.Errorf("%s: Train() error = nil", name)
+		}
+		if !reflect.DeepEqual(network.layers, before.layers) {
+			t.Errorf("%s: a rejected step changed the parameters", name)
+		}
+	}
+}
+
+// The scaled initialization bounds each layer's weights by √(3/fan_in), is
+// reproducible, and differs from the uniform-0.5 one; NewNetwork keeps
+// the uniform-0.5 initialization.
+func TestNewNetworkWithInitializations(t *testing.T) {
+	scaled, err := NewNetworkWith(42, ScaledUniform, 62, 16, 8, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, _ := NewNetworkWith(42, ScaledUniform, 62, 16, 8, 1)
+	if !reflect.DeepEqual(scaled.layers, again.layers) {
+		t.Error("the scaled initialization is not reproducible")
+	}
+
+	for i, layer := range scaled.layers {
+		bound := math.Sqrt(3 / float64(len(layer.weights[0])))
+		largest := 0.0
+		for neuron, weights := range layer.weights {
+			if layer.biases[neuron] != 0 {
+				t.Errorf("layer %d: bias %v, want 0", i, layer.biases[neuron])
+			}
+			for _, weight := range weights {
+				largest = math.Max(largest, math.Abs(weight))
+			}
+		}
+		if largest >= bound || largest < bound/2 {
+			t.Errorf("layer %d: largest |weight| %v, want below %v and not far below it", i, largest, bound)
+		}
+	}
+
+	uniform, _ := NewNetwork(42, 62, 16, 8, 1)
+	half, _ := NewNetworkWith(42, UniformHalf, 62, 16, 8, 1)
+	if !reflect.DeepEqual(uniform.layers, half.layers) {
+		t.Error("NewNetwork is not the uniform-0.5 initialization")
+	}
+	if reflect.DeepEqual(uniform.layers, scaled.layers) {
+		t.Error("the initializations do not differ")
+	}
+
+	if _, err := NewNetworkWith(42, "xavier", 62, 1); err == nil {
+		t.Error("an unsupported initialization was accepted")
+	}
+}
+
+// Zeroed inputs stay at 0 through training, with and without weight
+// decay, because an input that is 0 in every sample never produces a
+// gradient.
+func TestZeroInputsStayZero(t *testing.T) {
+	network := smallNetwork(t)
+	if err := network.ZeroInputs([]int{1}); err != nil {
+		t.Fatal(err)
+	}
+	for _, weights := range network.layers[0].weights {
+		if weights[1] != 0 {
+			t.Fatalf("input 1 is not zeroed: %v", weights)
+		}
+	}
+
+	samples := []Sample{
+		{Inputs: []float64{0.3, 0, 2.0}, Targets: []float64{1, 0}},
+		{Inputs: []float64{-0.7, 0, 0.1}, Targets: []float64{0, 1}},
+	}
+	for range 50 {
+		if _, err := network.Train(context.Background(), samples, 0.5, Options{Loss: BinaryCrossEntropy, L2: 0.01}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for neuron, weights := range network.layers[0].weights {
+		if weights[1] != 0 {
+			t.Errorf("neuron %d: zeroed input 1 moved to %v", neuron, weights[1])
+		}
+		if weights[0] == 0 || weights[2] == 0 {
+			t.Errorf("neuron %d: exercised inputs did not train: %v", neuron, weights)
+		}
+	}
+
+	for name, inputs := range map[string][]int{"out of range": {3}, "negative": {-1}, "repeated": {0, 0}} {
+		if err := smallNetwork(t).ZeroInputs(inputs); err == nil {
+			t.Errorf("%s: ZeroInputs() error = nil", name)
+		}
+	}
+}

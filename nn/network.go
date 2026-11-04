@@ -22,8 +22,30 @@ type Network struct {
 	layers    []denseLayer
 }
 
-// NewNetwork creates a network with reproducible initial weights.
+// Initialization is the distribution of the initial weights. Biases always
+// start at 0.
+type Initialization string
+
+const (
+	// UniformHalf draws every weight uniformly from [−0.5, 0.5).
+	UniformHalf Initialization = "uniform-0.5"
+	// ScaledUniform draws the weights of a layer uniformly from
+	// [−√(3/fan_in), √(3/fan_in)), where fan_in is the number of inputs of
+	// the layer, so that each pre-activation starts with a variance of
+	// about 1 for inputs of unit variance.
+	ScaledUniform Initialization = "scaled-uniform"
+)
+
+// NewNetwork creates a network with reproducible initial weights drawn
+// uniformly from [−0.5, 0.5).
 func NewNetwork(seed int64, sizes ...int) (*Network, error) {
+	return NewNetworkWith(seed, UniformHalf, sizes...)
+}
+
+// NewNetworkWith creates a network with reproducible initial weights drawn
+// from the given initialization. The same seed, initialization, and sizes
+// always give the same weights.
+func NewNetworkWith(seed int64, initialization Initialization, sizes ...int) (*Network, error) {
 	if len(sizes) < 2 {
 		return nil, fmt.Errorf("at least input and output sizes are required")
 	}
@@ -32,6 +54,10 @@ func NewNetwork(seed int64, sizes ...int) (*Network, error) {
 		if size <= 0 {
 			return nil, fmt.Errorf("layer sizes must be positive")
 		}
+	}
+
+	if initialization != UniformHalf && initialization != ScaledUniform {
+		return nil, fmt.Errorf("unsupported initialization %q", initialization)
 	}
 
 	rng := rand.New(rand.NewSource(seed))
@@ -44,6 +70,12 @@ func NewNetwork(seed int64, sizes ...int) (*Network, error) {
 		inputCount := sizes[index-1]
 		neuronCount := sizes[index]
 
+		// A uniform draw from [−bound, bound).
+		bound := 0.5
+		if initialization == ScaledUniform {
+			bound = math.Sqrt(3 / float64(inputCount))
+		}
+
 		layer := denseLayer{
 			weights: make([][]float64, neuronCount),
 			biases:  make([]float64, neuronCount),
@@ -53,7 +85,7 @@ func NewNetwork(seed int64, sizes ...int) (*Network, error) {
 			layer.weights[neuron] = make([]float64, inputCount)
 
 			for input := 0; input < inputCount; input++ {
-				layer.weights[neuron][input] = rng.Float64() - 0.5
+				layer.weights[neuron][input] = (2*rng.Float64() - 1) * bound
 			}
 		}
 
@@ -61,6 +93,33 @@ func NewNetwork(seed int64, sizes ...int) (*Network, error) {
 	}
 
 	return network, nil
+}
+
+// ZeroInputs sets the first-layer weights of the given inputs to 0, so
+// those inputs contribute nothing until training changes them. Full-batch
+// gradient descent never changes the weight of an input that is 0 in every
+// sample, and weight decay keeps a zero weight at 0, so an input that no
+// training sample exercises stays at 0 for the whole run. Indices must be
+// distinct and within the input size.
+func (n *Network) ZeroInputs(inputs []int) error {
+	seen := make(map[int]bool, len(inputs))
+	for _, input := range inputs {
+		if input < 0 || input >= n.inputSize {
+			return fmt.Errorf("input %d is out of range", input)
+		}
+		if seen[input] {
+			return fmt.Errorf("input %d is repeated", input)
+		}
+		seen[input] = true
+	}
+
+	for _, input := range inputs {
+		for neuron := range n.layers[0].weights {
+			n.layers[0].weights[neuron][input] = 0
+		}
+	}
+
+	return nil
 }
 
 // Predict computes outputs without changing the network parameters. It
