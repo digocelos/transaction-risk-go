@@ -1,0 +1,13 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/initialization",
+      "code": "required"
+    },
+    {
+      "path": "/regularization",
+      "code": "required"
+    }
+  ]
+}

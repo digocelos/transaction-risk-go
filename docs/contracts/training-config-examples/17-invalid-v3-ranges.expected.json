@@ -1,0 +1,25 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/initialization/scheme",
+      "code": "invalid_enum_value"
+    },
+    {
+      "path": "/initialization/zero_unexercised_inputs",
+      "code": "wrong_type"
+    },
+    {
+      "path": "/loss",
+      "code": "invalid_enum_value"
+    },
+    {
+      "path": "/regularization/availability_dropout",
+      "code": "out_of_range"
+    },
+    {
+      "path": "/regularization/l2",
+      "code": "out_of_range"
+    }
+  ]
+}

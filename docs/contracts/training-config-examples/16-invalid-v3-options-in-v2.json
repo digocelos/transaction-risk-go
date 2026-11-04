@@ -1,0 +1,38 @@
+{
+  "config_version": "pix-training-config-v2",
+  "feature_schema": "pix-risk-v1",
+  "architecture": {
+    "hidden_layers": [4],
+    "activation": "sigmoid"
+  },
+  "initialization": {
+    "scheme": "scaled-uniform",
+    "zero_unexercised_inputs": true
+  },
+  "algorithm": "full-batch-gradient-descent",
+  "loss": "binary-cross-entropy",
+  "regularization": {
+    "l2": 0.0001,
+    "availability_dropout": 0.1
+  },
+  "seed": 42,
+  "learning_rate": 1.0,
+  "max_epochs": 5000,
+  "boundaries": {
+    "train_end": "2026-06-05T00:00:00Z",
+    "validation_end": "2026-06-12T00:00:00Z"
+  },
+  "selection": {
+    "checkpoint": {
+      "policy": "final_epoch"
+    },
+    "early_stopping": {
+      "policy": "none"
+    },
+    "threshold": {
+      "policy": "fixed",
+      "value": 0.5
+    },
+    "test_evaluation": "after_selection"
+  }
+}

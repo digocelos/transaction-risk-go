@@ -1,8 +1,11 @@
 // Package trainingconfig decodes and validates training configurations
-// that follow pix-training-config-v2, as specified in
-// docs/contracts/pix-training-config-v2.md. A configuration fixes every
+// that follow pix-training-config-v2 or pix-training-config-v3, as
+// specified in docs/contracts/pix-training-config-v2.md and
+// docs/contracts/pix-training-config-v3.md. A configuration fixes every
 // option of a training run before any dataset is read or any artifact is
-// written.
+// written. A version 2 document decodes to the options version 3 added
+// with the values that reproduce version 2 exactly, and keeps its own
+// canonical form and identity (ADR 0022).
 package trainingconfig
 
 import (
@@ -24,8 +27,22 @@ import (
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 )
 
-// Version is the only configuration version this package supports.
-const Version = "pix-training-config-v2"
+// Supported configuration versions. Version is the current one.
+const (
+	VersionV2 = "pix-training-config-v2"
+	VersionV3 = "pix-training-config-v3"
+	Version   = VersionV3
+)
+
+// Versions returns the supported configuration versions, oldest first.
+func Versions() []string {
+	return []string{VersionV2, VersionV3}
+}
+
+// Supported reports whether a configuration version is supported.
+func Supported(version string) bool {
+	return version == VersionV2 || version == VersionV3
+}
 
 // MaxDocumentSize is the largest configuration document, in bytes.
 const MaxDocumentSize = 65536
@@ -39,6 +56,8 @@ const (
 	thresholdMinimum = 0.0
 	thresholdMaximum = 1.0
 	MaxImprovement   = 1.0
+	MaxL2            = 1.0
+	MaxDropout       = 1.0
 )
 
 // Supported options. Any other value is rejected.
@@ -46,6 +65,10 @@ const (
 	ActivationSigmoid          = "sigmoid"
 	AlgorithmFullBatchGradient = "full-batch-gradient-descent"
 	LossMeanSquaredError       = "mean-squared-error"
+	LossBinaryCrossEntropy     = "binary-cross-entropy"
+
+	InitializationUniformHalf   = "uniform-0.5"
+	InitializationScaledUniform = "scaled-uniform"
 
 	CheckpointFinalEpoch     = "final_epoch"
 	CheckpointBestValidation = "best_validation"
@@ -84,8 +107,13 @@ const (
 	CodeIncompatibleOptions      = "incompatible_options"
 )
 
-// Config is a valid pix-training-config-v2 configuration.
+// Config is a valid configuration of a supported version. Version is the
+// document's version, which fixes which options it may set: a version 2
+// configuration always has the uniform-0.5 initialization, no zeroed
+// inputs, the mean squared error, no weight decay, and no availability
+// dropout, the values that version 3 documents may change.
 type Config struct {
+	Version        string
 	FeatureSchema  string
 	HiddenLayers   []int
 	Activation     string
@@ -100,6 +128,18 @@ type Config struct {
 	EarlyStopping  EarlyStopping
 	Threshold      Threshold
 	TestEvaluation string
+
+	// Initialization is the distribution of the initial weights, and
+	// ZeroUnexercisedInputs whether the first-layer weights of every
+	// feature that is 0 in all usable train records are set to 0 before
+	// training.
+	Initialization        string
+	ZeroUnexercisedInputs bool
+	// L2 is the weight decay coefficient, and AvailabilityDropout the
+	// probability with which each optional source of each train record
+	// is masked in each epoch.
+	L2                  float64
+	AvailabilityDropout float64
 }
 
 // Checkpoint chooses which epoch's network is kept. Objective,
@@ -184,19 +224,20 @@ func Read(r io.Reader) (Config, error) {
 }
 
 // Decode validates a configuration document and returns its typed form. A
-// document that breaks pix-training-config-v2 yields a *ValidationError.
+// document that breaks its version's contract yields a *ValidationError.
 func Decode(data []byte) (Config, error) {
 	root, issues := parseDocument(data)
 	if len(issues) > 0 {
 		return Config{}, newValidationError(issues)
 	}
 
-	if issue := checkVersion(root); issue != nil {
+	version, issue := checkVersion(root)
+	if issue != nil {
 		return Config{}, newValidationError([]strictjson.Issue{*issue})
 	}
 
 	d := &decoder{}
-	config := d.config(root)
+	config := d.config(root, version)
 
 	if len(d.Issues()) > 0 {
 		return Config{}, newValidationError(d.Issues())
@@ -240,39 +281,50 @@ func parseDocument(data []byte) (*strictjson.Value, []strictjson.Issue) {
 	return root, issues
 }
 
-func checkVersion(root *strictjson.Value) *strictjson.Issue {
+func checkVersion(root *strictjson.Value) (string, *strictjson.Issue) {
 	const path = "/config_version"
 
 	value, ok := root.Members["config_version"]
 
 	switch {
 	case !ok:
-		return &strictjson.Issue{Path: path, Code: CodeRequired, Message: "config_version is required"}
+		return "", &strictjson.Issue{Path: path, Code: CodeRequired, Message: "config_version is required"}
 	case value.Kind == strictjson.KindNull:
-		return &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "config_version must not be null"}
+		return "", &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "config_version must not be null"}
 	case value.Kind != strictjson.KindString:
-		return &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "config_version must be a string"}
-	case value.Text != Version:
-		return &strictjson.Issue{Path: path, Code: CodeUnsupportedConfigVersion,
+		return "", &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "config_version must be a string"}
+	case !Supported(value.Text):
+		return "", &strictjson.Issue{Path: path, Code: CodeUnsupportedConfigVersion,
 			Message: fmt.Sprintf("unsupported configuration version %q", value.Text)}
 	}
 
-	return nil
+	return value.Text, nil
 }
 
 type decoder struct {
 	strictjson.Validator
 }
 
-func (d *decoder) config(root *strictjson.Value) Config {
-	d.Object("", root, "config_version", "feature_schema", "architecture", "algorithm", "loss",
-		"seed", "learning_rate", "max_epochs", "boundaries", "selection")
-
+func (d *decoder) config(root *strictjson.Value, version string) Config {
 	config := Config{
-		FeatureSchema: d.Enum("", root, "feature_schema", pixrisk.Schema),
-		Algorithm:     d.Enum("", root, "algorithm", AlgorithmFullBatchGradient),
-		Loss:          d.Enum("", root, "loss", LossMeanSquaredError),
+		Version:        version,
+		Initialization: InitializationUniformHalf,
 	}
+
+	if version == VersionV2 {
+		d.Object("", root, "config_version", "feature_schema", "architecture", "algorithm", "loss",
+			"seed", "learning_rate", "max_epochs", "boundaries", "selection")
+		config.Loss = d.Enum("", root, "loss", LossMeanSquaredError)
+	} else {
+		d.Object("", root, "config_version", "feature_schema", "architecture", "initialization", "algorithm",
+			"loss", "regularization", "seed", "learning_rate", "max_epochs", "boundaries", "selection")
+		config.Loss = d.Enum("", root, "loss", LossMeanSquaredError, LossBinaryCrossEntropy)
+		d.initialization(root, &config)
+		d.regularization(root, &config)
+	}
+
+	config.FeatureSchema = d.Enum("", root, "feature_schema", pixrisk.Schema)
+	config.Algorithm = d.Enum("", root, "algorithm", AlgorithmFullBatchGradient)
 
 	seed, _ := d.Integer("", root, "seed", 0, false)
 	config.Seed = seed
@@ -314,6 +366,45 @@ func (d *decoder) number(path string, parent *strictjson.Value, name string, inR
 	}
 
 	return number
+}
+
+// boolean reads a non-nullable boolean member.
+func (d *decoder) boolean(path string, parent *strictjson.Value, name string) bool {
+	value, memberPath, state := d.Member(path, parent, name, false)
+	if state != strictjson.Valid {
+		return false
+	}
+
+	if value.Kind != strictjson.KindBool {
+		d.Add(memberPath, CodeWrongType, "%s must be a boolean", name)
+		return false
+	}
+
+	return value.Text == "true"
+}
+
+func (d *decoder) initialization(root *strictjson.Value, config *Config) {
+	object, path := d.ObjectMember("", root, "initialization", false, "scheme", "zero_unexercised_inputs")
+	if object == nil {
+		return
+	}
+
+	config.Initialization = d.Enum(path, object, "scheme", InitializationUniformHalf, InitializationScaledUniform)
+	config.ZeroUnexercisedInputs = d.boolean(path, object, "zero_unexercised_inputs")
+}
+
+func (d *decoder) regularization(root *strictjson.Value, config *Config) {
+	object, path := d.ObjectMember("", root, "regularization", false, "l2", "availability_dropout")
+	if object == nil {
+		return
+	}
+
+	config.L2 = d.number(path, object, "l2", func(value float64) bool {
+		return value >= 0 && value <= MaxL2
+	}, "a number from 0 to 1")
+	config.AvailabilityDropout = d.number(path, object, "availability_dropout", func(value float64) bool {
+		return value >= 0 && value <= MaxDropout
+	}, "a number from 0 to 1")
 }
 
 func (d *decoder) architecture(root *strictjson.Value, config *Config) {
@@ -493,17 +584,30 @@ func (d *decoder) threshold(path string, parent *strictjson.Value) Threshold {
 }
 
 // Validate checks a configuration built in code against the rules Decode
-// applies: supported options, dimensions, ranges, and boundary order.
+// applies: a supported version, the options that version allows,
+// dimensions, ranges, and boundary order.
 func (c Config) Validate() error {
 	switch {
+	case !Supported(c.Version):
+		return fmt.Errorf("configuration version %q is not supported", c.Version)
 	case c.FeatureSchema != pixrisk.Schema:
 		return fmt.Errorf("feature schema %q is not supported", c.FeatureSchema)
 	case c.Activation != ActivationSigmoid:
 		return fmt.Errorf("activation %q is not supported", c.Activation)
 	case c.Algorithm != AlgorithmFullBatchGradient:
 		return fmt.Errorf("algorithm %q is not supported", c.Algorithm)
-	case c.Loss != LossMeanSquaredError:
+	case c.Loss != LossMeanSquaredError && c.Loss != LossBinaryCrossEntropy:
 		return fmt.Errorf("loss %q is not supported", c.Loss)
+	case c.Initialization != InitializationUniformHalf && c.Initialization != InitializationScaledUniform:
+		return fmt.Errorf("initialization %q is not supported", c.Initialization)
+	case !(c.L2 >= 0 && c.L2 <= MaxL2):
+		return errors.New("l2 must be a number from 0 to 1")
+	case !(c.AvailabilityDropout >= 0 && c.AvailabilityDropout <= MaxDropout):
+		return errors.New("availability_dropout must be a number from 0 to 1")
+	case c.Version == VersionV2 && (c.Loss != LossMeanSquaredError || c.Initialization != InitializationUniformHalf ||
+		c.ZeroUnexercisedInputs || c.L2 != 0 || c.AvailabilityDropout != 0):
+		return fmt.Errorf("%s has only the mean squared error, the uniform-0.5 initialization, no zeroed inputs, "+
+			"no weight decay, and no availability dropout; use %s for the other options", VersionV2, VersionV3)
 	case len(c.HiddenLayers) > MaxHiddenLayers:
 		return fmt.Errorf("at most %d hidden layers are supported", MaxHiddenLayers)
 	case c.Seed < 0 || c.Seed > strictjson.MaxInteger:
@@ -577,23 +681,36 @@ func (c Config) validateSelection() error {
 }
 
 // canonical is the canonical form of a configuration. Members that the
-// chosen policies do not use are omitted.
+// chosen policies do not use are omitted, and so are the members a version
+// 2 document does not have.
 type canonical struct {
-	ConfigVersion string             `json:"config_version"`
-	FeatureSchema string             `json:"feature_schema"`
-	Architecture  canonicalArch      `json:"architecture"`
-	Algorithm     string             `json:"algorithm"`
-	Loss          string             `json:"loss"`
-	Seed          int64              `json:"seed"`
-	LearningRate  float64            `json:"learning_rate"`
-	MaxEpochs     int                `json:"max_epochs"`
-	Boundaries    canonicalBounds    `json:"boundaries"`
-	Selection     canonicalSelection `json:"selection"`
+	ConfigVersion  string                   `json:"config_version"`
+	FeatureSchema  string                   `json:"feature_schema"`
+	Architecture   canonicalArch            `json:"architecture"`
+	Initialization *canonicalInit           `json:"initialization,omitempty"`
+	Algorithm      string                   `json:"algorithm"`
+	Loss           string                   `json:"loss"`
+	Regularization *canonicalRegularization `json:"regularization,omitempty"`
+	Seed           int64                    `json:"seed"`
+	LearningRate   float64                  `json:"learning_rate"`
+	MaxEpochs      int                      `json:"max_epochs"`
+	Boundaries     canonicalBounds          `json:"boundaries"`
+	Selection      canonicalSelection       `json:"selection"`
 }
 
 type canonicalArch struct {
 	HiddenLayers []int  `json:"hidden_layers"`
 	Activation   string `json:"activation"`
+}
+
+type canonicalInit struct {
+	Scheme                string `json:"scheme"`
+	ZeroUnexercisedInputs bool   `json:"zero_unexercised_inputs"`
+}
+
+type canonicalRegularization struct {
+	L2                  float64 `json:"l2"`
+	AvailabilityDropout float64 `json:"availability_dropout"`
 }
 
 type canonicalBounds struct {
@@ -632,7 +749,7 @@ func (c Config) Canonical() ([]byte, error) {
 	}
 
 	form := canonical{
-		ConfigVersion: Version,
+		ConfigVersion: c.Version,
 		FeatureSchema: c.FeatureSchema,
 		Architecture:  canonicalArch{HiddenLayers: append([]int{}, c.HiddenLayers...), Activation: c.Activation},
 		Algorithm:     c.Algorithm,
@@ -644,6 +761,11 @@ func (c Config) Canonical() ([]byte, error) {
 			TrainEnd:      c.TrainEnd.UTC().Format(time.RFC3339Nano),
 			ValidationEnd: c.ValidationEnd.UTC().Format(time.RFC3339Nano),
 		},
+	}
+
+	if c.Version != VersionV2 {
+		form.Initialization = &canonicalInit{Scheme: c.Initialization, ZeroUnexercisedInputs: c.ZeroUnexercisedInputs}
+		form.Regularization = &canonicalRegularization{L2: c.L2, AvailabilityDropout: c.AvailabilityDropout}
 	}
 
 	selection := &form.Selection

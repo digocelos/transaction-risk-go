@@ -1,0 +1,17 @@
+{
+  "status": "invalid",
+  "issues": [
+    {
+      "path": "/initialization",
+      "code": "unknown_member"
+    },
+    {
+      "path": "/loss",
+      "code": "invalid_enum_value"
+    },
+    {
+      "path": "/regularization",
+      "code": "unknown_member"
+    }
+  ]
+}
