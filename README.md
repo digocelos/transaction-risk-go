@@ -556,4 +556,6 @@ compatibility (ADR 0013, ADR 0020):
   measurements.
 - [`docs/readiness.md`](docs/readiness.md): the software readiness
   checklist.
+- [`datasets/`](datasets/README.md): the synthetic scenario datasets, with
+  their catalogs and what a model trained on each one learned.
 - [`GLOSSARY.md`](GLOSSARY.md): the domain vocabulary.
