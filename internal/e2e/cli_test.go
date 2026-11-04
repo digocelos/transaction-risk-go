@@ -134,6 +134,8 @@ func TestFailuresWriteNothing(t *testing.T) {
 	report := filepath.Join(tampered, "report.json")
 	write(t, report, bytes.Replace(read(t, report), []byte(`"requested_epochs": 100`), []byte(`"requested_epochs": 101`), 1))
 
+	other := write(t, filepath.Join(work, "other.jsonl"), generate(t, 3000, 3))
+
 	readOnly := filepath.Join(work, "read-only")
 	if err := os.Mkdir(readOnly, 0o555); err != nil {
 		t.Fatal(err)
@@ -162,6 +164,12 @@ func TestFailuresWriteNothing(t *testing.T) {
 			1, "", filepath.Join(work, "e2.json")},
 		{"tampered run", "promote", []string{"-run", tampered, "-output", filepath.Join(work, "m1.json")},
 			1, "", filepath.Join(work, "m1.json")},
+		{"invalid record, inspect", "inspect", []string{"-run", runDir, "-dataset", invalid, "-output", filepath.Join(work, "i1.json")},
+			2, "invalid_dataset", filepath.Join(work, "i1.json")},
+		{"another dataset, inspect", "inspect", []string{"-run", runDir, "-dataset", other, "-output", filepath.Join(work, "i2.json")},
+			1, "", filepath.Join(work, "i2.json")},
+		{"tampered run, inspect", "inspect", []string{"-run", tampered, "-dataset", dataset, "-output", filepath.Join(work, "i3.json")},
+			1, "", filepath.Join(work, "i3.json")},
 		{"existing run directory", "train", []string{"-config", benchmarkConfig, "-dataset", dataset, "-run-dir", runDir},
 			1, "", ""},
 		{"unwritable run directory", "train", []string{"-config", benchmarkConfig, "-dataset", dataset, "-run-dir", filepath.Join(readOnly, "run")},

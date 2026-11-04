@@ -164,6 +164,21 @@ func TestDocumentedWorkflow(t *testing.T) {
 		t.Errorf("no evaluation report: %v", err)
 	}
 
+	inspection := filepath.Join(work, "inspection.json")
+	var inspected struct {
+		Status              string   `json:"status"`
+		ModelSHA256         string   `json:"model_sha256"`
+		UnexercisedFeatures []string `json:"unexercised_features"`
+	}
+	decode(t, "inspect", run(t, bin, "inspect", nil,
+		"-run", runDir, "-dataset", dataset, "-output", inspection), 0, &inspected)
+	if inspected.Status != "inspected" || inspected.ModelSHA256 != trained.ModelSHA256 || inspected.UnexercisedFeatures == nil {
+		t.Errorf("inspect = %+v", inspected)
+	}
+	if _, err := os.Stat(inspection); err != nil {
+		t.Errorf("no inspection report: %v", err)
+	}
+
 	var scored struct {
 		Status string  `json:"status"`
 		Score  float64 `json:"score"`
