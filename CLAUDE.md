@@ -16,9 +16,10 @@ Workflow packages, in the order a model moves through them:
 - `training/`: runs training, selection, and limits; writes `trainingreport` reports.
 - `modelartifact/`, `trainingrun/`: the `pix-risk-model-v1` artifact and published runs.
 - `modelevaluation/`: independent evaluation of saved artifacts.
+- `modelinspection/`: inspection of a trained model with its run and dataset: parameters, unexercised features, partial dependence, missingness probes.
 - `scoring/`: loads an artifact once and scores inputs.
 - `internal/`: strict JSON, synthetic datasets, and the end-to-end test.
-- `cmd/`: `convert`, `synthesize`, `train`, `promote`, `evaluate`, `predict`.
+- `cmd/`: `convert`, `synthesize`, `train`, `promote`, `inspect`, `evaluate`, `predict`.
 
 ## Commands
 

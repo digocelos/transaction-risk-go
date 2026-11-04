@@ -148,8 +148,11 @@ Save it as `data/scenarios-config.json`, then train, promote, and evaluate on th
 ```bash
 go run ./cmd/train -config data/scenarios-config.json -dataset data/scenarios.jsonl -run-dir data/runs/scenarios-v1
 go run ./cmd/promote -run data/runs/scenarios-v1 -output data/scenarios-model.json
+go run ./cmd/inspect -run data/runs/scenarios-v1 -dataset data/scenarios.jsonl -output data/scenarios-inspection.json
 go run ./cmd/evaluate -model data/scenarios-model.json -dataset data/scenarios.jsonl -partition test -output data/scenarios-evaluation.json
 ```
+
+`inspect` reports, among other things, that no train record exercises `limit_zero` or `key_type_other`, that the score falls as `key_distinct_accounts_m12` grows past 1, and that masking the recipient's key entry lets frauds fall below the threshold: the model learned the shortcuts this dataset makes true ([`pix-model-inspection-v1`](../docs/contracts/pix-model-inspection-v1.md)).
 
 `evaluate` exits with code 3 and marks the report incomplete for `unknown_loss_frauds`: some test frauds have an unknown loss by design, so the known-loss sums are partial ([`pix-evaluation-report-v1` §5.5](../docs/contracts/pix-evaluation-report-v1.md#55-completeness)).
 

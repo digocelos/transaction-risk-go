@@ -56,13 +56,15 @@ a test fraud has an unknown loss; the report is still written.
 ## Workflow
 
 The toolkit follows one path, configure → train and select → package →
-evaluate → load and score, and each step reads and writes versioned files:
+inspect → evaluate → load and score, and each step reads and writes
+versioned files:
 
 | Step | Command | Reads | Writes |
 |---|---|---|---|
 | Configure | | | a [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) file |
 | Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v1.md#3-training-run) with the [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
 | Package | `promote` | a run | the verified artifact, where your scorer reads it |
+| Inspect | `inspect` | a run and its training dataset | a [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) report |
 | Evaluate | `evaluate` | an artifact and a dataset | a [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) report |
 | Load and score | `predict`, `scoring` | an artifact and a [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input | a score |
 
@@ -238,7 +240,67 @@ output is replaced only with `-replace`. Any failure exits with code 1 and
 writes nothing. The SHA-256 values detect changed files; they are not
 signatures and do not show who produced a model.
 
-### 4. Evaluate (`cmd/evaluate`)
+### 4. Inspect (`cmd/inspect`)
+
+`inspect` measures the model itself, before any held-out data is looked
+at: it reads a run and its training dataset and writes an inspection
+report
+([`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md)):
+
+```bash
+mkdir -p inspections
+go run ./cmd/inspect \
+  -run runs/first \
+  -dataset training/testdata/pix-risk-v1.jsonl \
+  -output inspections/first.json
+```
+
+`-run`, `-dataset`, and `-output` are required, the directory of `-output`
+must exist, and the dataset must be the run's training dataset, by
+SHA-256. `-max-records` (default 1,000,000) limits the records read. An
+existing output is replaced only with `-replace`.
+
+`inspect` verifies the run completely, as `promote` does, reads and
+prepares the dataset exactly as training did, and reports:
+
+- **Parameters.** For each input feature, the norm of its first-layer
+  weights and how far they moved from the random initialization, rebuilt
+  from the configuration's seed; for each hidden neuron, its bias, norms,
+  and activation on the train records; the most similar pair of neurons
+  per layer; and the output layer.
+- **Unexercised features.** The features that are 0 in every usable train
+  record. Their weights never received a gradient and are still random: a
+  scoring input that activates one of them, such as a zero limit or an
+  unrecognized key type, gets a response that depends only on the seed.
+- **Partial dependence.** For each standardized feature, the mean score
+  and the share of validation records above the threshold as the feature
+  takes a fixed grid of real values: centavos, counts, days, or ratios.
+  The feature schema declares the direction each feature is expected to
+  move the score ([`pix-risk-v1` §20](docs/features/pix-risk-v1.md#20-expected-directions)),
+  and the report lists every move against it, inside and outside the
+  range the train records covered.
+- **Missingness probes.** The validation metrics with each optional source
+  masked, with every DICT group masked, and with every record moved to the
+  populations without a Pix key and without a payer device: how many
+  frauds fall below the threshold and how many legitimate payments rise
+  above it when an observation is unavailable.
+
+Standard output holds exactly one JSON object, followed by a newline:
+
+| Exit code | `status` | Meaning |
+|-----------|----------|---------|
+| 0 | `inspected` | The report was written. The object holds `report_sha256`, `model_sha256`, `dataset_sha256`, `unexercised_features`, and `direction_violations`, the number of moves against an expected direction. |
+| 2 | `invalid_dataset` | The dataset has invalid records. `dataset` holds the dataset report, and standard error repeats each problem. Nothing is written. |
+| 1 | none | Operational failure, such as a missing flag, a run that does not verify, a dataset that is not the run's training dataset, a dataset beyond the record limit, an existing output, a cancellation, or a failed write. Standard output is empty, and the message goes to standard error. |
+
+The report is a measurement, not a verdict. A direction violation inside
+the train range is a relation the model learned from the data; outside it,
+an extrapolation. What counts as too many, and what to do about a model
+that lets frauds evade when a source is missing, is your decision with
+your risk owners, and the [readiness checklist](docs/readiness.md) places
+that reading before the final evaluation.
+
+### 5. Evaluate (`cmd/evaluate`)
 
 `evaluate` measures a model artifact on one scope of a
 `pix-training-example-v2` dataset and writes an evaluation report
@@ -310,7 +372,7 @@ again: if you change a model after seeing its results there, that data has
 become validation data, and the changed model needs new held-out data
 ([ADR 0017](docs/adr/0017-saved-models-are-evaluated-read-only-on-an-explicit-scope.md)).
 
-### 5. Load and score (`cmd/predict`, `scoring`)
+### 6. Load and score (`cmd/predict`, `scoring`)
 
 `predict` scores one scoring input: a JSON document that follows the
 [`pix-payer-input-v2` input contract](docs/contracts/pix-payer-input-v2.md).
@@ -438,6 +500,7 @@ claims more than its identifier says:
 | [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) | The layout of a model artifact. |
 | [`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run) | The layout of a published run and its manifest. |
 | [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) | The report of an independent evaluation. |
+| [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) | The report of a model inspection. |
 
 The artifact version is the format of the file, not the model: two
 `pix-risk-model-v1` artifacts can hold models of very different quality,
