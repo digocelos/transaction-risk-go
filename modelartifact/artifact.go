@@ -96,8 +96,11 @@ type Threshold struct {
 	Value  float64 `json:"value"`
 }
 
-// Training identifies what produced the model.
+// Training identifies what produced the model. ConfigVersion is the
+// version of the configuration, which fixes the options the model was
+// trained with (ADR 0022).
 type Training struct {
+	ConfigVersion string              `json:"config_version"`
 	ConfigSHA256  string              `json:"config_sha256"`
 	DatasetSHA256 string              `json:"dataset_sha256"`
 	DatasetBytes  int64               `json:"dataset_bytes"`
@@ -145,6 +148,7 @@ func FromTraining(network *nn.Network, state pixrisk.State, report trainingrepor
 		SelectedEpoch: report.Selection.SelectedEpoch,
 		Threshold:     Threshold{Policy: report.Selection.Threshold.Policy, Value: report.Selection.Threshold.Value},
 		Training: Training{
+			ConfigVersion: config.Version,
 			ConfigSHA256:  configSHA256,
 			DatasetSHA256: report.Dataset.DatasetSHA256,
 			DatasetBytes:  report.Dataset.DatasetBytes,
@@ -283,7 +287,7 @@ func Marshal(artifact Artifact) ([]byte, error) {
 		},
 		Selection: storedSelection{SelectedEpoch: artifact.SelectedEpoch, Threshold: artifact.Threshold},
 		Training: storedTraining{
-			ConfigVersion: trainingconfig.Version,
+			ConfigVersion: training.ConfigVersion,
 			ConfigSHA256:  training.ConfigSHA256,
 			DatasetSHA256: training.DatasetSHA256,
 			DatasetBytes:  training.DatasetBytes,
@@ -358,7 +362,7 @@ func Decode(data []byte) (Artifact, error) {
 		return Artifact{}, fmt.Errorf("unsupported feature schema: %q", features.FeatureSchema)
 	case !reflect.DeepEqual(features.Descriptor, descriptor()):
 		return Artifact{}, errors.New("the feature descriptor is not the pix-risk-v1 descriptor")
-	case training.ConfigVersion != trainingconfig.Version:
+	case !trainingconfig.Supported(training.ConfigVersion):
 		return Artifact{}, fmt.Errorf("unsupported configuration version: %q", training.ConfigVersion)
 	case training.ReportVersion != trainingreport.Version:
 		return Artifact{}, fmt.Errorf("unsupported report version: %q", training.ReportVersion)
@@ -391,6 +395,7 @@ func Decode(data []byte) (Artifact, error) {
 		SelectedEpoch: value.Selection.SelectedEpoch,
 		Threshold:     value.Selection.Threshold,
 		Training: Training{
+			ConfigVersion: training.ConfigVersion,
 			ConfigSHA256:  training.ConfigSHA256,
 			DatasetSHA256: training.DatasetSHA256,
 			DatasetBytes:  training.DatasetBytes,
@@ -448,7 +453,7 @@ func (a Artifact) validate() error {
 		return fmt.Errorf("the parameters do not match the sizes %v", a.Sizes)
 	case a.Activation != trainingconfig.ActivationSigmoid:
 		return fmt.Errorf("unsupported activation: %q", a.Activation)
-	case a.Loss != trainingconfig.LossMeanSquaredError:
+	case a.Loss != trainingconfig.LossMeanSquaredError && a.Loss != trainingconfig.LossBinaryCrossEntropy:
 		return fmt.Errorf("unsupported loss: %q", a.Loss)
 	case a.Algorithm != trainingconfig.AlgorithmFullBatchGradient:
 		return fmt.Errorf("unsupported algorithm: %q", a.Algorithm)
@@ -470,6 +475,8 @@ func (t Training) validate() error {
 	counts := t.Records
 
 	switch {
+	case !trainingconfig.Supported(t.ConfigVersion):
+		return fmt.Errorf("unsupported configuration version: %q", t.ConfigVersion)
 	case !isSHA256(t.ConfigSHA256) || !isSHA256(t.DatasetSHA256) || !isSHA256(t.ReportSHA256):
 		return errors.New("config_sha256, dataset_sha256, and report_sha256 must be 64 lowercase hexadecimal digits")
 	case t.DatasetBytes < 1:

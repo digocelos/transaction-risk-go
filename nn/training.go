@@ -16,14 +16,69 @@ type Sample struct {
 	Targets []float64
 }
 
-// TrainBatch performs one gradient descent update.
-// It returns the mean squared error measured before the update.
+// Loss is the function a training step minimizes, averaged over samples
+// and outputs.
+type Loss string
+
+const (
+	// MeanSquaredError is the mean of (output − target)².
+	MeanSquaredError Loss = "mean-squared-error"
+	// BinaryCrossEntropy is the mean of −(target·ln(output) +
+	// (1 − target)·ln(1 − output)), the negative log-likelihood of a
+	// Bernoulli target. Its gradient with respect to a sigmoid
+	// pre-activation is output − target, which does not vanish when the
+	// output saturates. For the reported value, outputs are clamped to
+	// [LossEpsilon, 1 − LossEpsilon], so a saturated output gives a large
+	// finite loss instead of infinity.
+	BinaryCrossEntropy Loss = "binary-cross-entropy"
+)
+
+// LossEpsilon bounds the outputs inside the logarithms of the binary
+// cross-entropy value.
+const LossEpsilon = 1e-15
+
+// Options configure a training step. The zero value is the mean squared
+// error without weight decay, the step TrainBatch performs.
+type Options struct {
+	// Loss is the function to minimize; "" is MeanSquaredError.
+	Loss Loss
+	// L2 is the weight decay coefficient: each weight, not bias, also
+	// receives the gradient of (L2 / 2)·weight², that is L2·weight, so the
+	// update is weight − learningRate·(gradient + L2·weight). It must be
+	// finite and not negative; 0 is no decay.
+	L2 float64
+}
+
+func (o Options) validate() error {
+	switch {
+	case o.Loss != "" && o.Loss != MeanSquaredError && o.Loss != BinaryCrossEntropy:
+		return fmt.Errorf("unsupported loss %q", o.Loss)
+	case o.L2 < 0 || math.IsNaN(o.L2) || math.IsInf(o.L2, 0):
+		return fmt.Errorf("the weight decay must be finite and not negative")
+	}
+	return nil
+}
+
+// LossValue returns the loss of one output against its target, before
+// averaging: the squared difference, or the clamped binary cross-entropy.
+func LossValue(loss Loss, output, target float64) float64 {
+	if loss == BinaryCrossEntropy {
+		clamped := math.Min(math.Max(output, LossEpsilon), 1-LossEpsilon)
+		return -(target*math.Log(clamped) + (1-target)*math.Log(1-clamped))
+	}
+	difference := output - target
+	return difference * difference
+}
+
+// TrainBatch performs one gradient descent update on the mean squared
+// error without weight decay. It returns the loss measured before the
+// update.
 //
 // TrainBatch changes no parameter unless the whole step is finite: it
 // fails when a parameter, an input, a gradient, or an updated parameter is
 // not finite, and the network keeps its previous parameters.
 func (n *Network) TrainBatch(samples []Sample, learningRate float64) (float64, error) {
-	return n.TrainBatchContext(context.Background(), samples, learningRate)
+	return n.Train(context.Background(), samples, learningRate, Options{})
 }
 
 // TrainBatchContext is TrainBatch with cancellation: it checks ctx before
@@ -34,6 +89,20 @@ func (n *Network) TrainBatchContext(
 	samples []Sample,
 	learningRate float64,
 ) (float64, error) {
+	return n.Train(ctx, samples, learningRate, Options{})
+}
+
+// Train performs one full-batch gradient descent update with the given
+// options: the configured loss, averaged over samples and outputs, plus
+// weight decay. It returns the loss measured before the update, without
+// the decay term, checks ctx before the first sample and every 1,024
+// samples, and changes no parameter unless the whole step is finite.
+func (n *Network) Train(
+	ctx context.Context,
+	samples []Sample,
+	learningRate float64,
+	options Options,
+) (float64, error) {
 	if len(samples) == 0 {
 		return 0, fmt.Errorf("training batch cannot be empty")
 	}
@@ -43,6 +112,11 @@ func (n *Network) TrainBatchContext(
 		math.IsInf(learningRate, 0) {
 		return 0, fmt.Errorf("learning rate must be finite and positive")
 	}
+
+	if err := options.validate(); err != nil {
+		return 0, err
+	}
+	crossEntropy := options.Loss == BinaryCrossEntropy
 
 	outputSize := len(n.layers[len(n.layers)-1].biases)
 
@@ -140,12 +214,18 @@ func (n *Network) TrainBatchContext(
 		deltas := make([]float64, outputSize)
 
 		for neuron, output := range outputs {
-			difference := output - sample.Targets[neuron]
+			target := sample.Targets[neuron]
+			totalLoss += LossValue(options.Loss, output, target)
 
-			totalLoss += difference * difference
-
-			deltas[neuron] = 2 * difference *
-				output * (1 - output) / float64(outputSize)
+			// The derivative of the loss with respect to the neuron's
+			// pre-activation, divided by the number of outputs the loss
+			// averages over.
+			if crossEntropy {
+				deltas[neuron] = (output - target) / float64(outputSize)
+			} else {
+				deltas[neuron] = 2 * (output - target) *
+					output * (1 - output) / float64(outputSize)
+			}
 		}
 
 		// Walk backward through all layers.
@@ -205,9 +285,10 @@ func (n *Network) TrainBatchContext(
 				scale*gradients[layerIndex].biases[neuron]
 
 			updated[layerIndex].weights[neuron] = make([]float64, len(layer.weights[neuron]))
-			for input := range layer.weights[neuron] {
-				updated[layerIndex].weights[neuron][input] = layer.weights[neuron][input] -
-					scale*gradients[layerIndex].weights[neuron][input]
+			for input, weight := range layer.weights[neuron] {
+				updated[layerIndex].weights[neuron][input] = weight -
+					scale*gradients[layerIndex].weights[neuron][input] -
+					learningRate*options.L2*weight
 			}
 		}
 

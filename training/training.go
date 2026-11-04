@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
 	"github.com/digocelos/transaction-risk-go/nn"
@@ -22,12 +23,16 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
 
-// Result is a trained network, the preparation state it expects, and the
-// report of its run.
+// Result is a trained network, the preparation state it expects, the
+// report of its run, and the names of the features that no usable train
+// record exercised, in descriptor order: their first-layer weights never
+// received a gradient, so they hold their initialization, or 0 when the
+// configuration zeroes them.
 type Result struct {
-	Network *nn.Network
-	State   pixrisk.State
-	Report  trainingreport.Report
+	Network             *nn.Network
+	State               pixrisk.State
+	Report              trainingreport.Report
+	UnexercisedFeatures []string
 }
 
 // InvalidDatasetError reports a dataset with at least one invalid record,
@@ -104,9 +109,15 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, l
 		return Result{}, err
 	}
 
-	network, selection, err := train(ctx, prepared, config, progress)
+	network, selection, unexercised, err := train(ctx, prepared, config, progress)
 	if err != nil {
 		return Result{}, err
+	}
+
+	descriptor := pixrisk.Descriptor()
+	names := make([]string, len(unexercised))
+	for i, index := range unexercised {
+		names[i] = descriptor[index].Name
 	}
 
 	selection.Threshold, err = chooseThreshold(ctx, network, prepared.Validation, config.Threshold)
@@ -140,7 +151,99 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, l
 		report.Test = &test
 	}
 
-	return Result{Network: network, State: prepared.State, Report: report}, nil
+	return Result{Network: network, State: prepared.State, Report: report, UnexercisedFeatures: names}, nil
+}
+
+// UnexercisedFeatures returns the indices of the features whose value is 0
+// in every usable train record, in descriptor order.
+func UnexercisedFeatures(train []PreparedExample) []int {
+	var unexercised []int
+	for j := 0; j < pixrisk.FeatureCount; j++ {
+		exercised := false
+		for _, example := range train {
+			if example.Values[j] != 0 {
+				exercised = true
+				break
+			}
+		}
+		if !exercised {
+			unexercised = append(unexercised, j)
+		}
+	}
+	return unexercised
+}
+
+// InitialNetwork builds the network a run starts from: the configured
+// architecture, initialized from the configuration's seed and
+// initialization, with the first-layer weights of every unexercised
+// feature set to 0 when the configuration asks for it. It returns the
+// network and the indices of the unexercised features.
+func InitialNetwork(config trainingconfig.Config, train []PreparedExample) (*nn.Network, []int, error) {
+	network, err := nn.NewNetworkWith(config.Seed, nn.Initialization(config.Initialization), config.Sizes()...)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	unexercised := UnexercisedFeatures(train)
+	if config.ZeroUnexercisedInputs {
+		if err := network.ZeroInputs(unexercised); err != nil {
+			return nil, nil, err
+		}
+	}
+
+	return network, unexercised, nil
+}
+
+// availabilityDropout masks optional sources of the train records: in
+// every epoch, for each record in line order and each optional source in
+// report order, one draw from a generator seeded with the configuration's
+// seed decides, with the configured probability, whether the source's
+// features are set to 0, exactly as an unavailable source is represented.
+// The generator is separate from the one that initialized the weights, so
+// the masks of a run depend only on the seed, the probability, and the
+// order of records and sources.
+type availabilityDropout struct {
+	rng         *rand.Rand
+	probability float64
+	originals   [][]float64
+	masked      [][]float64
+	groups      [][]int
+}
+
+func newAvailabilityDropout(config trainingconfig.Config, train []PreparedExample) *availabilityDropout {
+	if config.AvailabilityDropout == 0 {
+		return nil
+	}
+
+	dropout := &availabilityDropout{
+		rng:         rand.New(rand.NewSource(config.Seed)),
+		probability: config.AvailabilityDropout,
+		originals:   make([][]float64, len(train)),
+		masked:      make([][]float64, len(train)),
+	}
+	for i, example := range train {
+		dropout.originals[i] = example.Values
+		dropout.masked[i] = make([]float64, len(example.Values))
+	}
+	for _, source := range pixrisk.Sources() {
+		dropout.groups = append(dropout.groups, pixrisk.SourceFeatures(source))
+	}
+
+	return dropout
+}
+
+// next draws the masks of one epoch into the masked vectors.
+func (d *availabilityDropout) next() {
+	for i, original := range d.originals {
+		copy(d.masked[i], original)
+		for _, group := range d.groups {
+			if d.rng.Float64() < d.probability {
+				for _, j := range group {
+					d.masked[i][j] = 0
+				}
+			}
+		}
+	}
 }
 
 func preparedValues(examples []PreparedExample) []pixrisk.Prepared {
@@ -175,30 +278,42 @@ func checkValidation(validation evaluation.PartitionCounts, config trainingconfi
 	return nil
 }
 
-// train fits a new network with full-batch gradient descent, in dataset
-// order, and keeps the configured checkpoint. With best_validation, the
-// validation objective is measured every EvaluationInterval epochs and
-// after the last epoch; an evaluation improves on the best one only by more
-// than MinImprovement, so ties keep the earliest epoch, and the best
-// network is restored. Early stopping ends training after Patience
-// evaluations without improvement. TrainBatch fails without changing the
-// network when a step diverges.
-func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.Config, progress func(int, float64)) (*nn.Network, trainingreport.Selection, error) {
+// train fits the initial network with full-batch gradient descent on the
+// configured loss, with weight decay and availability dropout when
+// configured, in dataset order, and keeps the configured checkpoint. With
+// best_validation, the validation objective is measured every
+// EvaluationInterval epochs and after the last epoch, on the validation
+// records as the dataset supplies them; an evaluation improves on the best
+// one only by more than MinImprovement, so ties keep the earliest epoch,
+// and the best network is restored. Early stopping ends training after
+// Patience evaluations without improvement. A step that diverges fails
+// without changing the network. It returns the indices of the unexercised
+// features with the network.
+func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.Config, progress func(int, float64)) (*nn.Network, trainingreport.Selection, []int, error) {
 	selection := trainingreport.Selection{
 		RequestedEpochs:  config.MaxEpochs,
 		StopReason:       trainingreport.StopMaxEpochs,
 		CheckpointPolicy: config.Checkpoint.Policy,
 	}
 
-	network, err := nn.NewNetwork(config.Seed, config.Sizes()...)
+	network, unexercised, err := InitialNetwork(config, prepared.Train)
 	if err != nil {
-		return nil, selection, err
+		return nil, selection, nil, err
 	}
 
 	samples := make([]nn.Sample, len(prepared.Train))
 	for i, example := range prepared.Train {
 		samples[i] = nn.Sample{Inputs: example.Values, Targets: []float64{target(example.Label)}}
 	}
+
+	dropout := newAvailabilityDropout(config, prepared.Train)
+	if dropout != nil {
+		for i := range samples {
+			samples[i].Inputs = dropout.masked[i]
+		}
+	}
+
+	options := nn.Options{Loss: nn.Loss(config.Loss), L2: config.L2}
 
 	checkpoint := config.Checkpoint
 	selecting := checkpoint.Policy == trainingconfig.CheckpointBestValidation
@@ -209,12 +324,16 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 
 	for epoch := 1; epoch <= config.MaxEpochs; epoch++ {
 		if err := ctx.Err(); err != nil {
-			return nil, selection, err
+			return nil, selection, nil, err
 		}
 
-		loss, err := network.TrainBatchContext(ctx, samples, config.LearningRate)
+		if dropout != nil {
+			dropout.next()
+		}
+
+		loss, err := network.Train(ctx, samples, config.LearningRate, options)
 		if err != nil {
-			return nil, selection, fmt.Errorf("train epoch %d: %w", epoch-1, err)
+			return nil, selection, nil, fmt.Errorf("train epoch %d: %w", epoch-1, err)
 		}
 
 		if progress != nil {
@@ -227,9 +346,9 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 			continue
 		}
 
-		value, err := objective(ctx, network, prepared.Validation, checkpoint.Objective)
+		value, err := objective(ctx, network, prepared.Validation, checkpoint.Objective, config.Loss)
 		if err != nil {
-			return nil, selection, fmt.Errorf("evaluate the validation objective at epoch %d: %w", epoch, err)
+			return nil, selection, nil, fmt.Errorf("evaluate the validation objective at epoch %d: %w", epoch, err)
 		}
 		selection.Evaluations++
 
@@ -248,7 +367,7 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 
 	if !selecting {
 		selection.SelectedEpoch = selection.ActualEpochs
-		return network, selection, nil
+		return network, selection, unexercised, nil
 	}
 
 	name := checkpoint.Objective
@@ -256,7 +375,7 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 	selection.SelectedEpoch = bestEpoch
 	selection.SelectedObjectiveValue = &bestValue
 
-	return best, selection, nil
+	return best, selection, unexercised, nil
 }
 
 func target(label trainingdata.Label) float64 {
@@ -275,9 +394,9 @@ func improves(value, best float64, checkpoint trainingconfig.Checkpoint) bool {
 	return value > best+checkpoint.MinImprovement
 }
 
-// objective measures the validation objective: the mean squared error, or
+// objective measures the validation objective: the configured loss, or
 // the average precision.
-func objective(ctx context.Context, network *nn.Network, examples []PreparedExample, name string) (float64, error) {
+func objective(ctx context.Context, network *nn.Network, examples []PreparedExample, name, loss string) (float64, error) {
 	predictions, err := predict(ctx, network, examples)
 	if err != nil {
 		return 0, err
@@ -286,8 +405,7 @@ func objective(ctx context.Context, network *nn.Network, examples []PreparedExam
 	if name == trainingconfig.ObjectiveValidationLoss {
 		total := 0.0
 		for _, p := range predictions {
-			difference := p.Score - target(p.Label)
-			total += difference * difference
+			total += nn.LossValue(nn.Loss(loss), p.Score, target(p.Label))
 		}
 		return total / float64(len(predictions)), nil
 	}

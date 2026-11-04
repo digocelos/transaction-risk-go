@@ -58,6 +58,34 @@ var sources = []source{
 	{SourceKeyEntries, "/observations/recipient_pix_key/entries", "/pix_payment/recipient_key_usage"},
 }
 
+// sourceFeatures lists the features each optional source feeds, by index,
+// as pix-risk-v1 §9 assigns them: the standardized or known values and the
+// availability indicators the source's members produce. An unavailable
+// source leaves all of them at 0.
+var sourceFeatures = map[string][]int{
+	SourcePeriodLimit:              {iLimitUtilization, iLimitUtilizationKnown, iLimitZero},
+	SourcePayerDeviceHistory:       {iDeviceSettledCount90d, iDeviceSettledCount90dKnown},
+	SourcePayerDeviceRegistration:  {iDeviceRegistered, iDeviceRegisteredKnown},
+	SourceRecipientPreRegistration: {iRecipientPreRegistered, iRecipientPreRegisteredKnown},
+	SourceRecipientAccountEntry:    {iRecipientAccountAge, iRecipientAccountAgeKnown},
+	SourceRecipientPixKeyEntry:     {iKeyLinkAge, iKeyOwnershipAge, iKeyTypeCPF, iKeyTypeCNPJ, iKeyTypePhone, iKeyTypeEmail, iKeyTypeEVP, iKeyTypeOther, iKeyEntryKnown},
+	SourcePersonSpi:                {iPersonStatistics, iPersonStatistics + 1, iPersonStatistics + 2, iPersonStatistics + 3},
+	SourcePersonFraudMarkers:       {iPersonStatistics + 4, iPersonStatistics + 5, iPersonStatistics + 6, iPersonStatistics + 7, iPersonStatistics + 8, iPersonStatistics + 9},
+	SourcePersonInfractionReports:  {iPersonStatistics + 10, iPersonStatistics + 11},
+	SourcePersonEntries:            {iPersonStatistics + 12, iPersonStatistics + 13},
+	SourceKeySpi:                   {iKeyStatistics, iKeyStatistics + 1, iKeyStatistics + 2, iKeyStatistics + 3},
+	SourceKeyFraudMarkers:          {iKeyStatistics + 4, iKeyStatistics + 5, iKeyStatistics + 6, iKeyStatistics + 7, iKeyStatistics + 8, iKeyStatistics + 9},
+	SourceKeyInfractionReports:     {iKeyStatistics + 10, iKeyStatistics + 11},
+	SourceKeyEntries:               {iKeyStatistics + 12, iKeyStatistics + 13},
+}
+
+// SourceFeatures returns the indices of the features an optional source
+// feeds, in descriptor order, or nil for an unknown source. Setting them
+// all to 0 is exactly how an unavailable source is represented.
+func SourceFeatures(name string) []int {
+	return slices.Clone(sourceFeatures[name])
+}
+
 // Sources returns the names of the optional sources, in report order.
 func Sources() []string {
 	names := make([]string, len(sources))

@@ -61,7 +61,7 @@ versioned files:
 
 | Step | Command | Reads | Writes |
 |---|---|---|---|
-| Configure | | | a [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) file |
+| Configure | | | a [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) file |
 | Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v1.md#3-training-run) with the [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
 | Package | `promote` | a run | the verified artifact, where your scorer reads it |
 | Inspect | `inspect` | a run and its training dataset | a [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) report |
@@ -119,8 +119,10 @@ one JSON Lines record per past Pix payment, embedding its
 [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input
 and the outcome observed later. The records are prepared with the feature
 schema [`pix-risk-v1`](docs/features/pix-risk-v1.md), and a
-[`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md)
-configuration fixes everything else about the run.
+[`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md)
+configuration fixes everything else about the run; version 2
+configurations are still accepted and train the same models as before
+([ADR 0022](docs/adr/0022-training-options-are-versioned-by-the-configuration.md)).
 
 ```bash
 mkdir -p runs
@@ -139,29 +141,40 @@ is written.
 synthetic records for trying the command, and
 [`docs/contracts/training-config-examples/`](docs/contracts/training-config-examples/)
 holds configurations to start from, such as
-`04-best-validation-loss.json`:
+`15-v3-regularized.json`:
 
 ```json
 {
-  "config_version": "pix-training-config-v2",
+  "config_version": "pix-training-config-v3",
   "feature_schema": "pix-risk-v1",
-  "architecture": {"hidden_layers": [4], "activation": "sigmoid"},
+  "architecture": {"hidden_layers": [16, 8], "activation": "sigmoid"},
+  "initialization": {"scheme": "scaled-uniform", "zero_unexercised_inputs": true},
   "algorithm": "full-batch-gradient-descent",
-  "loss": "mean-squared-error",
+  "loss": "binary-cross-entropy",
+  "regularization": {"l2": 0.0001, "availability_dropout": 0.1},
   "seed": 42,
-  "learning_rate": 1.0,
+  "learning_rate": 0.5,
   "max_epochs": 3000,
   "boundaries": {"train_end": "2026-06-05T00:00:00Z", "validation_end": "2026-06-12T00:00:00Z"},
   "selection": {
     "checkpoint": {"policy": "best_validation", "objective": "validation_loss",
-                   "evaluation_interval": 10, "min_improvement": 0.0001},
-    "early_stopping": {"policy": "patience", "patience": 20},
+                   "evaluation_interval": 10, "min_improvement": 0},
+    "early_stopping": {"policy": "patience", "patience": 30},
     "threshold": {"policy": "max_recall_at_max_false_positive_rate",
-                  "max_false_positive_rate": 0.5},
+                  "max_false_positive_rate": 0.05},
     "test_evaluation": "after_selection"
   }
 }
 ```
+
+Version 3 adds four options a model inspection can motivate: a scaled
+initialization, so neurons do not start saturated; zeroed weights for the
+features no train record exercises, instead of random ones; the binary
+cross-entropy, whose gradient does not vanish on confidently wrong
+records; and regularization, weight decay and availability dropout, which
+masks optional sources at random during training so the network learns
+what an unavailable observation means. Each has a value that reproduces
+version 2 exactly.
 
 `train`:
 
@@ -177,10 +190,13 @@ holds configurations to start from, such as
    records only.
 4. Checks that the validation partition supports the configured selection.
 5. Trains the configured network on the usable train records only, with
-   full-batch gradient descent, for at most `max_epochs` epochs. The train
-   partition needs at least one usable `fraud` record and one usable
-   `legitimate` record. A step that would make a parameter non-finite
-   stops training, and nothing is written.
+   full-batch gradient descent on the configured loss, for at most
+   `max_epochs` epochs, with the configured initialization, weight decay,
+   and availability dropout. The train partition needs at least one usable
+   `fraud` record and one usable `legitimate` record. A step that would
+   make a parameter non-finite stops training, and nothing is written.
+   Standard error names the features no usable train record exercises,
+   whose weights are the initialization or 0.
 6. Keeps the configured checkpoint: the last epoch, or the epoch with the
    best validation loss or PR-AUC, optionally stopping early after a number
    of evaluations without improvement.
@@ -470,10 +486,10 @@ precision, recall, false positives, and missed losses against your own risk
 policy.
 
 - Training uses the natural class distribution, with no resampling or
-  reweighting. The checkpoint, early stopping, and threshold follow your
-  configuration; the toolkit never chooses a risk policy for you, and a
-  validation-selected threshold is only as reliable as the validation
-  partition is representative.
+  reweighting. The checkpoint, early stopping, threshold, loss, and
+  regularization follow your configuration; the toolkit never chooses a
+  risk policy for you, and a validation-selected threshold is only as
+  reliable as the validation partition is representative.
 - Training is full batch: every usable record stays in memory, and every
   epoch passes the whole train partition through the network. Memory grows
   with the records and time with the records, the parameters, and the
@@ -495,7 +511,7 @@ claims more than its identifier says:
 | [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) | The scoring input an integrator supplies. |
 | [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) | A training record: a scoring input with its outcome. |
 | [`pix-risk-v1`](docs/features/pix-risk-v1.md) | The feature schema: the 62 ordered features, how they are prepared, and the layout of the fitted preparation state. |
-| [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) | A training configuration; its canonical SHA-256 identifies it. |
+| [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) | A training configuration; its canonical SHA-256 identifies it. [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) is still accepted and trains the same models as before (ADR 0022). |
 | [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) | The report of a training run. |
 | [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) | The layout of a model artifact. |
 | [`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run) | The layout of a published run and its manifest. |

@@ -29,9 +29,10 @@ type Options struct {
 
 // Inspect decodes a model artifact from its exact bytes, checks that the
 // configuration is the one the artifact names, reads the training dataset
-// exactly as training did, and measures the parameters, the inputs no
-// train record exercised, the partial dependence on the validation
-// partition, and the missingness probes. The dataset must be the model's
+// exactly as training did, rebuilds the network training started from, and
+// measures the parameters, the inputs no train record exercised, the
+// partial dependence on the validation partition, and the missingness
+// probes. The dataset must be the model's
 // training dataset, by SHA-256; a dataset with invalid records yields a
 // *training.InvalidDatasetError. The artifact and the configuration are
 // validated before the dataset is read, and ctx is checked while reading.
@@ -71,7 +72,7 @@ func Inspect(ctx context.Context, model []byte, config trainingconfig.Config, da
 	}
 
 	layers := artifact.Network.Layers()
-	initial, err := nn.NewNetwork(config.Seed, artifact.Sizes...)
+	initial, _, err := training.InitialNetwork(config, prepared.Train)
 	if err != nil {
 		return Report{}, err
 	}

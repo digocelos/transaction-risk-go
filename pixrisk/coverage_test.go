@@ -1,6 +1,8 @@
 package pixrisk
 
 import (
+	"github.com/digocelos/transaction-risk-go/pixinput"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -97,5 +99,83 @@ func TestPossibleStates(t *testing.T) {
 
 	if len(Sources()) != 14 {
 		t.Errorf("Sources() has %d sources, want 14", len(Sources()))
+	}
+}
+
+// Masking the features of a source sets exactly the features that
+// preparation sets to 0 when the source is missing from the scoring input.
+func TestSourceFeaturesMatchPreparation(t *testing.T) {
+	decodeComplete := func() pixinput.ScoringInput {
+		data, err := os.ReadFile("../docs/contracts/examples-v2/01-complete.json")
+		if err != nil {
+			t.Fatal(err)
+		}
+		input, err := pixinput.Decode(data, pixinput.ContractV2)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return input
+	}
+	base, err := Prepare(decodeComplete())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	remove := map[string]func(*pixinput.ScoringInput){
+		SourcePeriodLimit:              func(in *pixinput.ScoringInput) { in.Observations.PayerAccount.PeriodLimit = nil },
+		SourcePayerDeviceHistory:       func(in *pixinput.ScoringInput) { in.Observations.PayerDevice.SettledOutgoingPix90d = nil },
+		SourcePayerDeviceRegistration:  func(in *pixinput.ScoringInput) { in.Observations.PayerDevice.Registration = nil },
+		SourceRecipientPreRegistration: func(in *pixinput.ScoringInput) { in.Observations.RecipientAccount.PreRegistration = nil },
+		SourceRecipientAccountEntry:    func(in *pixinput.ScoringInput) { in.Observations.RecipientAccount.Entry = nil },
+		SourceRecipientPixKeyEntry:     func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Entry = nil },
+		SourcePersonSpi:                func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.Spi = nil },
+		SourcePersonFraudMarkers:       func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.FraudMarkers = nil },
+		SourcePersonInfractionReports:  func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.InfractionReports = nil },
+		SourcePersonEntries:            func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.Entries = nil },
+		SourceKeySpi:                   func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Spi = nil },
+		SourceKeyFraudMarkers:          func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.FraudMarkers = nil },
+		SourceKeyInfractionReports:     func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.InfractionReports = nil },
+		SourceKeyEntries:               func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Entries = nil },
+	}
+
+	covered := map[int]bool{}
+	for _, name := range Sources() {
+		input := decodeComplete()
+		remove[name](&input)
+		without, err := Prepare(input)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+
+		masked := SourceFeatures(name)
+		if len(masked) == 0 {
+			t.Fatalf("%s: no features", name)
+		}
+		expected := base.Values
+		for _, i := range masked {
+			expected[i] = 0
+			covered[i] = true
+		}
+		if without.Values != expected {
+			t.Errorf("%s: preparation without the source gives %v, masking its features gives %v", name, without.Values, expected)
+		}
+	}
+
+	// The payment, context, and required payer history features (0 to 13)
+	// come from no optional source; every other feature comes from exactly
+	// one.
+	counts := map[int]int{}
+	for _, name := range Sources() {
+		for _, i := range SourceFeatures(name) {
+			counts[i]++
+		}
+	}
+	for i, feature := range Descriptor() {
+		if want := i >= iLimitUtilization; covered[i] != want || counts[i] > 1 {
+			t.Errorf("feature %d %s: fed by %d sources, want optional %v", i, feature.Name, counts[i], want)
+		}
+	}
+	if SourceFeatures("other") != nil {
+		t.Error("an unknown source has features")
 	}
 }

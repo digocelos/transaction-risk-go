@@ -21,7 +21,6 @@ import (
 	"github.com/digocelos/transaction-risk-go/pixinput"
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"github.com/digocelos/transaction-risk-go/training"
-	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
 )
@@ -315,7 +314,7 @@ func Identify(artifact modelartifact.Artifact, artifactSHA256 string) Model {
 		Software:              artifact.Software,
 		Contracts:             Contracts{ScoringInput: pixinput.ContractV2, TrainingExample: trainingdata.TrainingExampleV2},
 		FeatureSchema:         pixrisk.Schema,
-		ConfigVersion:         trainingconfig.Version,
+		ConfigVersion:         trained.ConfigVersion,
 		ConfigSHA256:          trained.ConfigSHA256,
 		TrainingReportVersion: trainingreport.Version,
 		TrainingReportSHA256:  trained.ReportSHA256,

@@ -21,6 +21,8 @@ import (
 // config returns the baseline configuration for pixRiskFixture.
 func config() trainingconfig.Config {
 	return trainingconfig.Config{
+		Version:        trainingconfig.VersionV2,
+		Initialization: trainingconfig.InitializationUniformHalf,
 		FeatureSchema:  pixrisk.Schema,
 		HiddenLayers:   []int{4},
 		Activation:     trainingconfig.ActivationSigmoid,

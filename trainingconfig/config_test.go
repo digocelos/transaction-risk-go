@@ -86,8 +86,8 @@ func TestDecodeSpecificationExamples(t *testing.T) {
 		})
 	}
 
-	if count != 13 {
-		t.Errorf("found %d examples, want 13", count)
+	if count != 18 {
+		t.Errorf("found %d examples, want 18", count)
 	}
 }
 
@@ -98,16 +98,18 @@ func TestDecodeReadsEveryMember(t *testing.T) {
 	}
 
 	want := Config{
-		FeatureSchema: "pix-risk-v1",
-		HiddenLayers:  []int{4},
-		Activation:    "sigmoid",
-		Algorithm:     "full-batch-gradient-descent",
-		Loss:          "mean-squared-error",
-		Seed:          42,
-		LearningRate:  1,
-		MaxEpochs:     3000,
-		TrainEnd:      time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC),
-		ValidationEnd: time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC),
+		Version:        "pix-training-config-v2",
+		Initialization: "uniform-0.5",
+		FeatureSchema:  "pix-risk-v1",
+		HiddenLayers:   []int{4},
+		Activation:     "sigmoid",
+		Algorithm:      "full-batch-gradient-descent",
+		Loss:           "mean-squared-error",
+		Seed:           42,
+		LearningRate:   1,
+		MaxEpochs:      3000,
+		TrainEnd:       time.Date(2026, 6, 5, 0, 0, 0, 0, time.UTC),
+		ValidationEnd:  time.Date(2026, 6, 12, 0, 0, 0, 0, time.UTC),
 		Checkpoint: Checkpoint{
 			Policy: "best_validation", Objective: "validation_loss", EvaluationInterval: 10, MinImprovement: 0.0001,
 		},
