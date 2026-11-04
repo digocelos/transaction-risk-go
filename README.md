@@ -62,7 +62,7 @@ versioned files:
 | Step | Command | Reads | Writes |
 |---|---|---|---|
 | Configure | | | a [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) file |
-| Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v1.md#3-training-run) with the [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
+| Train and select | `train` | the configuration and a [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) dataset | a [run](docs/contracts/pix-risk-model-v2.md#3-training-run) with the [`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md) artifact and the [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) report |
 | Package | `promote` | a run | the verified artifact, where your scorer reads it |
 | Inspect | `inspect` | a run and its training dataset | a [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) report |
 | Evaluate | `evaluate` | an artifact and a dataset | a [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) report |
@@ -118,7 +118,7 @@ is a configuration whose boundaries fit it.
 one JSON Lines record per past Pix payment, embedding its
 [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) scoring input
 and the outcome observed later. The records are prepared with the feature
-schema [`pix-risk-v1`](docs/features/pix-risk-v1.md), and a
+schema [`pix-risk-v2`](docs/features/pix-risk-v2.md), and a
 [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md)
 configuration fixes everything else about the run; version 2
 configurations are still accepted and train the same models as before
@@ -146,7 +146,7 @@ holds configurations to start from, such as
 ```json
 {
   "config_version": "pix-training-config-v3",
-  "feature_schema": "pix-risk-v1",
+  "feature_schema": "pix-risk-v2",
   "architecture": {"hidden_layers": [16, 8], "activation": "sigmoid"},
   "initialization": {"scheme": "scaled-uniform", "zero_unexercised_inputs": true},
   "algorithm": "full-batch-gradient-descent",
@@ -207,9 +207,9 @@ version 2 exactly.
    partition once, after everything is frozen
    ([ADR 0015](docs/adr/0015-selection-uses-validation-only-and-test-is-explicit.md)).
 9. Publishes the run directory given by `-run-dir`
-   ([`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run)):
+   ([`pix-risk-run-v1`](docs/contracts/pix-risk-model-v2.md#3-training-run)):
    - `model.json`, the model artifact
-     ([`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md)): the
+     ([`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md)): the
      network, the feature descriptor and fitted preparation state, the
      selected epoch and threshold, and the identities of the configuration,
      dataset, report, and software build;
@@ -292,7 +292,7 @@ prepares the dataset exactly as training did, and reports:
   and the share of validation records above the threshold as the feature
   takes a fixed grid of real values: centavos, counts, days, or ratios.
   The feature schema declares the direction each feature is expected to
-  move the score ([`pix-risk-v1` §20](docs/features/pix-risk-v1.md#20-expected-directions)),
+  move the score ([`pix-risk-v2` §20](docs/features/pix-risk-v2.md#20-expected-directions)),
   and the report lists every move against it, inside and outside the
   range the train records covered.
 - **Missingness probes.** The validation metrics with each optional source
@@ -404,11 +404,15 @@ go run ./cmd/predict -model models/pix-risk.json docs/contracts/examples-v2/04-n
 ```
 
 ```
-{"status":"scored","contract_version":"pix-payer-input-v2","model":{"artifact_version":"pix-risk-model-v1","artifact_sha256":"909932dd…","feature_schema":"pix-risk-v1","threshold":{"policy":"fixed","value":0.5}},"score":0.012040875480930998,"notes":[{"path":"/observations/recipient_account/entry","status":"missing"},{"path":"/pix_payment/recipient_key_usage","status":"not_applicable"}]}
+{"status":"scored","contract_version":"pix-payer-input-v2","model":{"artifact_version":"pix-risk-model-v2","artifact_sha256":"909932dd…","feature_schema":"pix-risk-v2","threshold":{"policy":"fixed","value":0.5}},"score":0.012040875480930998,"notes":[{"path":"/observations/recipient_account/entry","status":"missing"},{"path":"/pix_payment/recipient_key_usage","status":"not_applicable"}],"model_notes":[]}
 ```
 
 Your hashes match only for the same build, and your score can differ in its
-last digits on another CPU architecture. With `-` or no input argument,
+last digits on another CPU architecture. `model_notes` is empty here
+because the synthetic training data covers this input; the same input
+scored with the model of [`scoring/example_test.go`](scoring/example_test.go),
+trained on 8 records, gets `{"feature":"no_pix_key","status":"unexercised"}`,
+because none of those records lacks a Pix key. With `-` or no input argument,
 `predict` reads the document from standard input, so any language can run
 it as a subprocess: write the document to its standard input, read one JSON
 line from its standard output, and branch on the exit code.
@@ -425,13 +429,13 @@ regulatory rules and operational decisions stay in your own systems. The
 metadata for your own rules.
 
 `predict` loads and validates the model before reading the input, then
-validates the input, prepares its `pix-risk-v1` features exactly as
+validates the input, prepares its `pix-risk-v2` features exactly as
 training does, and scores them. Standard output always holds exactly one
 JSON object, followed by a newline, and every object identifies the model:
 
 | Exit code | `status` | Meaning |
 |-----------|----------|---------|
-| 0 | `scored` | The payment was scored. `notes` lists each optional observation that was not available, with its `path` and `status`: `missing`, `stale`, `not_applicable`, `no_history`, `zero_limit`, or `unrecognized`. |
+| 0 | `scored` | The payment was scored. `notes` lists each optional observation that was not available, with its `path` and `status`: `missing`, `stale`, `not_applicable`, `no_history`, `zero_limit`, or `unrecognized`. `model_notes` lists each feature the model's preparation state `clipped` to the range its training data covered, and each `unexercised` feature the input activates that no training record exercised, by `feature` name; both depend on the model, and both mean the score rests on the edge of, or outside, what the model learned. |
 | 2 | `invalid_input` | The document breaks the contract. `issues` lists each problem with a JSON Pointer `path`, a stable `code`, and a `message`. A version 1 document, or a training record with an outcome or group key, is invalid. |
 | 3 | `insufficient_input` | The document is valid, but a required fact is `missing` or `stale`. `blockers` lists each `path` with its `reason`. |
 | 1 | none | Operational failure, such as a missing `-model` flag, a missing or invalid model, or an unreadable file. Standard output is empty, and the message goes to standard error. |
@@ -440,7 +444,12 @@ The model never guesses missing information. A required fact, such as the
 payer account's recent payment count, makes the input insufficient when it
 is missing or stale. An optional observation, such as a DICT statistic,
 that is not available is scored with an explicit availability indicator and
-reported in `notes`, never replaced by an invented value.
+reported in `notes`, never replaced by an invented value. The model also
+never extrapolates: a value beyond the range its training data covered is
+clipped to that range before scoring, and reported in `model_notes`, as is
+a feature that no training record exercised
+([`pix-risk-v2` §11](docs/features/pix-risk-v2.md#11-fitted-standardization),
+[ADR 0023](docs/adr/0023-the-preparation-state-bounds-what-the-network-receives.md)).
 [`docs/contracts/examples-v2/`](docs/contracts/examples-v2/) holds 20
 scoring inputs, each with its expected preparation result.
 
@@ -510,16 +519,16 @@ claims more than its identifier says:
 |---|---|
 | [`pix-payer-input-v2`](docs/contracts/pix-payer-input-v2.md) | The scoring input an integrator supplies. |
 | [`pix-training-example-v2`](docs/contracts/pix-training-example-v2.md) | A training record: a scoring input with its outcome. |
-| [`pix-risk-v1`](docs/features/pix-risk-v1.md) | The feature schema: the 62 ordered features, how they are prepared, and the layout of the fitted preparation state. |
+| [`pix-risk-v2`](docs/features/pix-risk-v2.md) | The feature schema: the 62 ordered features, how they are prepared, the layout of the fitted preparation state, the clipping to the train range, and the model notes. Replaces `pix-risk-v1` (ADR 0023). |
 | [`pix-training-config-v3`](docs/contracts/pix-training-config-v3.md) | A training configuration; its canonical SHA-256 identifies it. [`pix-training-config-v2`](docs/contracts/pix-training-config-v2.md) is still accepted and trains the same models as before (ADR 0022). |
 | [`pix-training-report-v2`](docs/contracts/pix-training-report-v2.md) | The report of a training run. |
-| [`pix-risk-model-v1`](docs/contracts/pix-risk-model-v1.md) | The layout of a model artifact. |
-| [`pix-risk-run-v1`](docs/contracts/pix-risk-model-v1.md#3-training-run) | The layout of a published run and its manifest. |
+| [`pix-risk-model-v2`](docs/contracts/pix-risk-model-v2.md) | The layout of a model artifact. |
+| [`pix-risk-run-v1`](docs/contracts/pix-risk-model-v2.md#3-training-run) | The layout of a published run and its manifest. |
 | [`pix-evaluation-report-v1`](docs/contracts/pix-evaluation-report-v1.md) | The report of an independent evaluation. |
 | [`pix-model-inspection-v1`](docs/contracts/pix-model-inspection-v1.md) | The report of a model inspection. |
 
 The artifact version is the format of the file, not the model: two
-`pix-risk-model-v1` artifacts can hold models of very different quality,
+`pix-risk-model-v2` artifacts can hold models of very different quality,
 trained on different data. How features are generated is the feature
 schema's, recorded inside the artifact; what produced a model is identified
 by the SHA-256 of its configuration, dataset, and report, and the artifact
@@ -549,7 +558,7 @@ compatibility (ADR 0013, ADR 0020):
 
 - [`docs/contracts/`](docs/contracts/): the normative contracts and their
   examples.
-- [`docs/features/pix-risk-v1.md`](docs/features/pix-risk-v1.md): the
+- [`docs/features/pix-risk-v2.md`](docs/features/pix-risk-v2.md): the
   feature schema.
 - [`docs/adr/`](docs/adr/): the architecture decisions.
 - [`docs/operations/`](docs/operations/): operating limits and

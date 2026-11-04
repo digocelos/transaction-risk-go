@@ -7,14 +7,14 @@ Go toolkit for payer-side Pix fraud scoring: validate inputs, prepare features, 
 Workflow packages, in the order a model moves through them:
 
 - `pixinput/`: decodes and validates `pix-payer-input-v2` scoring inputs.
-- `pixrisk/`: the `pix-risk-v1` feature schema: preparation, fitted standardization, coverage.
+- `pixrisk/`: the `pix-risk-v2` feature schema: preparation, fitted standardization with clipping to the train range, exercised flags, model notes, coverage.
 - `trainingdata/`: reads and classifies `pix-training-example-v2` datasets.
 - `trainingcsv/`: converts training data in the `pix-training-csv-v1` CSV layout to JSON Lines; the template is in `templates/training-data/`.
 - `trainingconfig/`: decodes `pix-training-config-v2` and `pix-training-config-v3` configurations; a v2 document keeps its identity and trains the same model (ADR 0022).
 - `evaluation/`: temporal partitions, metrics, threshold selection.
 - `nn/`: the dense network and full-batch gradient descent.
 - `training/`: runs training, selection, and limits; writes `trainingreport` reports.
-- `modelartifact/`, `trainingrun/`: the `pix-risk-model-v1` artifact and published runs.
+- `modelartifact/`, `trainingrun/`: the `pix-risk-model-v2` artifact and published runs.
 - `modelevaluation/`: independent evaluation of saved artifacts.
 - `modelinspection/`: inspection of a trained model with its run and dataset: parameters, unexercised features, partial dependence, missingness probes.
 - `scoring/`: loads an artifact once and scores inputs.
