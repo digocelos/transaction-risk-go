@@ -15,8 +15,8 @@ CI runs every step on linux/amd64 (`ubuntu-24.04`) and darwin/arm64 (`macos-15`)
 |---|---|
 | Formatting | A file is not formatted with `gofmt`. |
 | Vet | `go vet` reports a problem. |
-| Unit tests | Any package test fails: contracts, preparation, training, selection, artifacts, runs, evaluation, scoring, limits, and the 32-bit build guard. |
-| Integration tests | The workflow fails with the built commands (`internal/e2e`): the quick start, the Go API scenario, outcome isolation, every specification example through `predict`, failures that must write nothing, and an interrupted training run. |
+| Unit tests | Any package test fails: contracts, preparation, training, selection, artifacts, runs, evaluation, inspection, scoring, limits, and the 32-bit build guard. |
+| Integration tests | The workflow fails with the built commands (`internal/e2e`): the quick start, including the inspection of its run, the Go API scenario, outcome isolation, every specification example through `predict`, failures that must write nothing, and an interrupted training run. |
 | Race detector | Shared scoring has a data race: `scoring` and `predict`, the only code that shares state across goroutines. Training, evaluation, and the commands run on one goroutine. |
 | Benchmarks | A benchmark stops compiling or running at its smallest size. No time is asserted. |
 | Build | `go build ./...` fails. |
@@ -50,6 +50,7 @@ Deliberate mutations of the code, recorded in each issue's pull request, checked
 | G14 | A clean checkout runs the whole workflow without real data or a bundled model. | `TestDocumentedWorkflow`, the README quick start, `Example` in `scoring`. | The data is synthetic. |
 | G15 | Failures write nothing: invalid or version 1 datasets, other schemas, damaged artifacts, tampered runs, existing or unwritable outputs, and interrupts. | `TestFailuresWriteNothing`, `TestInterruptedTrainingPublishesNothing`, and the command tests. | — |
 | G16 | Training data prepared in the CSV template converts to the same records `train` reads, with every problem reported by row and column, and real data has an ignored place in the checkout. | `TestConvertRoundTrips`, `TestConvertReportsProblemsByRowAndColumn`, `TestTemplateConvertsAndTrains`, `TestTemplateWorkflow`; ADR 0021. | The template cannot tell whether an `as_of` is true; point-in-time correctness stays with whoever fills it. |
+| G17 | A trained model can be inspected read-only with its run and training dataset: the report reproduces the training report's validation metrics at baseline, scores with the arithmetic of scoring, lists exactly the features no train record exercised, measures the partial dependence of the score on each standardized feature against the directions the schema declares, and measures the validation metrics with each optional source masked as the preparation represents it. | `TestInspectMatchesScoringAndTraining`, `TestProbesMaskSourcesAsPreparationDoes`, `TestDirectionsAndScalesMatchTheSpecification`, `TestInspectRejectsOtherInputs`, `TestMarshalIsDeterministicAndRefusesInconsistentReports`, `TestInspectWritesAReport`, `TestDocumentedWorkflow`; [`pix-model-inspection-v1`](contracts/pix-model-inspection-v1.md). | The report measures; it does not decide. The expected directions are expectations about Pix fraud, not constraints the network satisfies. |
 
 ## 4. Operating envelope
 
@@ -63,12 +64,20 @@ No real dataset was available, so nothing in this checklist validates a model. W
 2. **Data audit.** Read the dataset report and coverage: exclusions by reason, label maturity, unknown losses, populations, availability states never seen in train (`not_exercised_in_train`), and group overlap. Decide what the gaps mean before training.
 3. **Boundaries and size.** Choose `train_end` and `validation_end` so every partition has both classes and enough mature labels, within the [envelope](operations/operating-limits.md#5-where-full-batch-training-ends) or with mini-batch training (#43).
 4. **Configuration search.** Compare architectures and settings on validation only, and record every run.
-5. **Final evaluation.** Evaluate the chosen model once on held-out data, including later periods with window scopes, and report precision, recall, PR-AUC, false positives, and missed losses per population.
-6. **Baseline.** Compare against the integrator's current rules on the same held-out data.
-7. **Risk policy.** Agree the threshold policy and its false positive limit with the risk owners; the threshold is metadata, and the decision stays outside the toolkit (ADR 0002).
-8. **Calibration.** If a probability is needed, calibrate and validate it; scores are not probabilities.
-9. **Governance.** Review privacy, pseudonymization of group keys, regulatory obligations, and model risk with the responsible teams.
-10. **Operation.** Deployment, monitoring, drift detection, and retraining policy are outside this toolkit.
+5. **Inspection.** Inspect the chosen run with `cmd/inspect` and read its [`pix-model-inspection-v1`](contracts/pix-model-inspection-v1.md) report before any held-out data is scored: which features no train record exercised, so their weights are still random; which features move the score against the direction the schema expects, inside the train range (a relation learned from the data) and outside it (an extrapolation); and how many frauds evade and how many legitimate payments are flagged when an optional source is masked. Decide what each means: more data, a different configuration, a rule outside the model, or acceptance. A model changed after this step goes back to step 4; the inspection reads only validation records, so it never consumes held-out data.
+6. **Final evaluation.** Evaluate the chosen model once on held-out data, including later periods with window scopes, and report precision, recall, PR-AUC, false positives, and missed losses per population.
+7. **Baseline.** Compare against the integrator's current rules on the same held-out data.
+8. **Risk policy.** Agree the threshold policy and its false positive limit with the risk owners; the threshold is metadata, and the decision stays outside the toolkit (ADR 0002).
+9. **Calibration.** If a probability is needed, calibrate and validate it; scores are not probabilities.
+10. **Governance.** Review privacy, pseudonymization of group keys, regulatory obligations, and model risk with the responsible teams.
+11. **Operation.** Deployment, monitoring, drift detection, and retraining policy are outside this toolkit.
+
+### 5.1 Known weak spots of a score alone
+
+A score ranks one payment by the observations it carries. Inspection of the model trained on the [scenario dataset](../datasets/README.md) showed two kinds of input where the score alone is weak, and where the integrator's own rules must stand (ADR 0002):
+
+- **Keyless payments.** A payment by typed account data has no Pix key, so every key observation is unavailable: the key's age, its type, and its DICT statistics. The model keeps only the recipient person and account, and a scammer can ask the victim to pay that way. A first payment to a recipient without a key, above an amount the integrator chooses, is a case for a rule, whatever the score.
+- **Payment velocity.** The 24-hour window carries a count of initiated payments, not their amount. A large transfer split into many small payments lowers each payment's amount feature, and the count alone does not restore the risk. Limits on the amount initiated per period are the integrator's rules; the toolkit never enforces one.
 
 ## 6. Remaining software limitations
 

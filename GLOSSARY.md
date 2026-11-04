@@ -250,6 +250,22 @@ The training dataset of a model, supplied to measure group overlap when another 
 An evaluation whose scope cannot support some metrics, because it has no usable examples, no fraud, no legitimate payments, or frauds with an unknown loss; it is reported, never treated as a quality pass.
 _Avoid_: Failed evaluation
 
+**Model inspection**:
+Measuring a trained model itself, with its run and its training dataset: how far its parameters moved from initialization, which features no train record exercised, its partial dependence on each feature, and its sensitivity to unavailable sources; it reads only and gives no verdict.
+
+**Unexercised feature**:
+A feature whose value is 0 in every usable train record, so its first-layer weights never received a gradient and still hold the random initialization; a scoring input that activates it gets a response that depends only on the seed.
+
+**Partial dependence**:
+The mean score, and the share of records above the threshold, when one feature is set to each value of a fixed grid in real units on every validation record, with every other feature as the record has it.
+
+**Expected direction**:
+The direction in which a Pix fraud model is expected to move its score as a feature grows, declared by the feature schema as risk-increasing, risk-decreasing, or none; an inspection reports where a model moves against it.
+_Avoid_: Monotonicity constraint (nothing is enforced)
+
+**Missingness probe**:
+The validation metrics recomputed with one optional source, every DICT group, or a population's discriminator applied to every record, exactly as the preparation represents the unavailable source; it shows how many frauds evade and how many legitimate payments are flagged when an observation is unavailable.
+
 ## Operations
 
 **Software readiness**:
