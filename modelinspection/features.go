@@ -158,26 +158,6 @@ func (s scale) raw(value float64) float64 {
 	return math.Round(raw*1e6) / 1e6
 }
 
-// sourceFeatures lists the features each optional source feeds, by index,
-// as pix-risk-v1 §9 assigns them. Masking a source sets them all to 0,
-// which is exactly how an unavailable source is represented.
-var sourceFeatures = map[string][]int{
-	pixrisk.SourcePeriodLimit:              {14, 15, 16},
-	pixrisk.SourcePayerDeviceHistory:       {19, 20},
-	pixrisk.SourcePayerDeviceRegistration:  {21, 22},
-	pixrisk.SourceRecipientPreRegistration: {17, 18},
-	pixrisk.SourceRecipientAccountEntry:    {23, 24},
-	pixrisk.SourceRecipientPixKeyEntry:     span(25, 33),
-	pixrisk.SourcePersonSpi:                span(34, 37),
-	pixrisk.SourcePersonFraudMarkers:       span(38, 43),
-	pixrisk.SourcePersonInfractionReports:  {44, 45},
-	pixrisk.SourcePersonEntries:            {46, 47},
-	pixrisk.SourceKeySpi:                   span(48, 51),
-	pixrisk.SourceKeyFraudMarkers:          span(52, 57),
-	pixrisk.SourceKeyInfractionReports:     {58, 59},
-	pixrisk.SourceKeyEntries:               {60, 61},
-}
-
 // Indices of the discriminators a population sets.
 const (
 	indexNoPixKey      = 2
@@ -204,7 +184,7 @@ type probe struct {
 func probes() []probe {
 	var list []probe
 	for _, name := range pixrisk.Sources() {
-		list = append(list, probe{name: name, kind: ProbeSource, masked: slices.Clone(sourceFeatures[name])})
+		list = append(list, probe{name: name, kind: ProbeSource, masked: pixrisk.SourceFeatures(name)})
 	}
 
 	var dict []int
@@ -212,19 +192,19 @@ func probes() []probe {
 		pixrisk.SourcePersonSpi, pixrisk.SourcePersonFraudMarkers, pixrisk.SourcePersonInfractionReports, pixrisk.SourcePersonEntries,
 		pixrisk.SourceKeySpi, pixrisk.SourceKeyFraudMarkers, pixrisk.SourceKeyInfractionReports, pixrisk.SourceKeyEntries,
 	} {
-		dict = append(dict, sourceFeatures[name]...)
+		dict = append(dict, pixrisk.SourceFeatures(name)...)
 	}
 	list = append(list, probe{name: ProbeDictStatistics, kind: ProbeSources, masked: dict})
 
 	var keyless []int
 	for _, name := range []string{pixrisk.SourceRecipientPixKeyEntry, pixrisk.SourceKeySpi, pixrisk.SourceKeyFraudMarkers, pixrisk.SourceKeyInfractionReports, pixrisk.SourceKeyEntries} {
-		keyless = append(keyless, sourceFeatures[name]...)
+		keyless = append(keyless, pixrisk.SourceFeatures(name)...)
 	}
 	list = append(list, probe{name: pixrisk.PopulationNoPixKey, kind: ProbePopulation, set: []int{indexNoPixKey}, masked: keyless})
 
 	var deviceless []int
 	for _, name := range []string{pixrisk.SourcePayerDeviceHistory, pixrisk.SourcePayerDeviceRegistration} {
-		deviceless = append(deviceless, sourceFeatures[name]...)
+		deviceless = append(deviceless, pixrisk.SourceFeatures(name)...)
 	}
 	list = append(list, probe{name: pixrisk.PopulationNoPayerDevice, kind: ProbePopulation, set: []int{indexNoPayerDevice}, masked: deviceless})
 
@@ -241,12 +221,4 @@ func (p probe) apply(values []float64) []float64 {
 		applied[i] = 0
 	}
 	return applied
-}
-
-func span(from, to int) []int {
-	indices := make([]int, 0, to-from+1)
-	for i := from; i <= to; i++ {
-		indices = append(indices, i)
-	}
-	return indices
 }

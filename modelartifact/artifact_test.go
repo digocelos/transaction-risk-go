@@ -274,6 +274,12 @@ func TestDecodeRejectsTamperedOrInvalidArtifacts(t *testing.T) {
 		"other report version": tamper(t, data, func(v map[string]any) {
 			object(v, "training")["report_version"] = "pix-training-report-v1"
 		}),
+		"other configuration version": tamper(t, data, func(v map[string]any) {
+			object(v, "training")["config_version"] = "pix-training-config-v1"
+		}),
+		"unsupported loss": tamper(t, data, func(v map[string]any) {
+			object(v, "network")["loss"] = "hinge"
+		}),
 		"unknown member": tamper(t, data, func(v map[string]any) {
 			v["signature"] = "none"
 		}),
@@ -461,5 +467,80 @@ func TestArtifactsAboveTheSizeLimitAreRefused(t *testing.T) {
 	}
 	if read, err := ReadFile(exact); err != nil || !bytes.Equal(read, data) {
 		t.Errorf("ReadFile() of a valid artifact: %v", err)
+	}
+}
+
+// An artifact trained with a version 3 configuration records that version
+// and its loss, round-trips, and scores exactly as training did.
+func TestArtifactRecordsConfigurationV3(t *testing.T) {
+	data, err := os.ReadFile("../docs/contracts/training-config-examples/15-v3-regularized.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := trainingconfig.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.MaxEpochs = 200
+	cfg.HiddenLayers = []int{4}
+	cfg.Threshold = trainingconfig.Threshold{Policy: trainingconfig.ThresholdFixed, Value: 0.5}
+	cfg.EarlyStopping = trainingconfig.EarlyStopping{Policy: trainingconfig.EarlyStoppingNone}
+
+	dataset, err := os.ReadFile(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := training.Run(context.Background(), bytes.NewReader(dataset), cfg, training.DefaultLimits, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := trainingreport.Marshal(result.Report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := FromTraining(result.Network, result.State, result.Report, sha256Hex(report), software)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, want := range []string{
+		`"config_version": "pix-training-config-v3"`,
+		`"loss": "binary-cross-entropy"`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("artifact does not contain %s", want)
+		}
+	}
+
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Training.ConfigVersion != trainingconfig.VersionV3 || decoded.Loss != trainingconfig.LossBinaryCrossEntropy ||
+		!reflect.DeepEqual(decoded.Network.Layers(), result.Network.Layers()) {
+		t.Errorf("decoded = %s %s", decoded.Training.ConfigVersion, decoded.Loss)
+	}
+
+	// The zeroed columns of the unexercised features survive the round trip
+	// as exact zeros.
+	if len(result.UnexercisedFeatures) == 0 {
+		t.Fatal("the fixture exercises every feature")
+	}
+	descriptor := pixrisk.Descriptor()
+	for _, name := range result.UnexercisedFeatures {
+		for j, feature := range descriptor {
+			if feature.Name != name {
+				continue
+			}
+			for _, weights := range decoded.Network.Layers()[0].Weights {
+				if weights[j] != 0 {
+					t.Errorf("%s: weight %v, want 0", name, weights[j])
+				}
+			}
+		}
 	}
 }

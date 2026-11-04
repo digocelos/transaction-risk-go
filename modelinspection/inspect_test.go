@@ -18,7 +18,6 @@ import (
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
 	"github.com/digocelos/transaction-risk-go/modelartifact"
-	"github.com/digocelos/transaction-risk-go/pixinput"
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"github.com/digocelos/transaction-risk-go/training"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
@@ -34,7 +33,6 @@ const (
 	selectionFixture = "../training/testdata/pix-risk-v1-selection.jsonl"
 	invalidDataset   = "../docs/contracts/training-examples-v2/dataset.jsonl"
 	baseline         = "../docs/contracts/training-config-examples/01-baseline.json"
-	completeExample  = "../docs/contracts/examples-v2/01-complete.json"
 	specification    = "../docs/features/pix-risk-v1.md"
 )
 
@@ -278,63 +276,44 @@ func TestInspectMatchesScoringAndTraining(t *testing.T) {
 	}
 }
 
-// Masking a source sets exactly the features that preparation sets to 0
-// when the source is missing from the scoring input.
-func TestProbesMaskSourcesAsPreparationDoes(t *testing.T) {
-	decodeComplete := func() pixinput.ScoringInput {
-		input, err := pixinput.Decode(read(t, completeExample), pixinput.ContractV2)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return input
-	}
-	base, err := pixrisk.Prepare(decodeComplete())
-	if err != nil {
-		t.Fatal(err)
+// The probes mask whole sources as pixrisk represents them, and the
+// populations add their discriminator.
+func TestProbesMaskWholeSources(t *testing.T) {
+	list := probes()
+	if len(list) != len(pixrisk.Sources())+3 {
+		t.Fatalf("%d probes", len(list))
 	}
 
-	remove := map[string]func(*pixinput.ScoringInput){
-		pixrisk.SourcePeriodLimit:              func(in *pixinput.ScoringInput) { in.Observations.PayerAccount.PeriodLimit = nil },
-		pixrisk.SourcePayerDeviceHistory:       func(in *pixinput.ScoringInput) { in.Observations.PayerDevice.SettledOutgoingPix90d = nil },
-		pixrisk.SourcePayerDeviceRegistration:  func(in *pixinput.ScoringInput) { in.Observations.PayerDevice.Registration = nil },
-		pixrisk.SourceRecipientPreRegistration: func(in *pixinput.ScoringInput) { in.Observations.RecipientAccount.PreRegistration = nil },
-		pixrisk.SourceRecipientAccountEntry:    func(in *pixinput.ScoringInput) { in.Observations.RecipientAccount.Entry = nil },
-		pixrisk.SourceRecipientPixKeyEntry:     func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Entry = nil },
-		pixrisk.SourcePersonSpi:                func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.Spi = nil },
-		pixrisk.SourcePersonFraudMarkers:       func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.FraudMarkers = nil },
-		pixrisk.SourcePersonInfractionReports:  func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.InfractionReports = nil },
-		pixrisk.SourcePersonEntries:            func(in *pixinput.ScoringInput) { in.Observations.RecipientPerson.Entries = nil },
-		pixrisk.SourceKeySpi:                   func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Spi = nil },
-		pixrisk.SourceKeyFraudMarkers:          func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.FraudMarkers = nil },
-		pixrisk.SourceKeyInfractionReports:     func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.InfractionReports = nil },
-		pixrisk.SourceKeyEntries:               func(in *pixinput.ScoringInput) { in.Observations.RecipientPixKey.Entries = nil },
+	for i, name := range pixrisk.Sources() {
+		if list[i].name != name || list[i].kind != ProbeSource || len(list[i].set) != 0 ||
+			!reflect.DeepEqual(list[i].masked, pixrisk.SourceFeatures(name)) {
+			t.Errorf("probe %d = %+v, want source %s", i, list[i], name)
+		}
 	}
 
-	for _, name := range pixrisk.Sources() {
-		input := decodeComplete()
-		remove[name](&input)
-		without, err := pixrisk.Prepare(input)
-		if err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
+	dict := list[len(pixrisk.Sources())]
+	keyless := list[len(list)-2]
+	deviceless := list[len(list)-1]
+	if dict.name != ProbeDictStatistics || dict.kind != ProbeSources || len(dict.masked) != 28 {
+		t.Errorf("dict probe = %+v", dict)
+	}
+	if keyless.name != pixrisk.PopulationNoPixKey || !reflect.DeepEqual(keyless.set, []int{indexNoPixKey}) ||
+		len(keyless.masked) != 9+14 {
+		t.Errorf("no_pix_key probe = %+v", keyless)
+	}
+	if deviceless.name != pixrisk.PopulationNoPayerDevice || !reflect.DeepEqual(deviceless.set, []int{indexNoPayerDevice}) ||
+		len(deviceless.masked) != 4 {
+		t.Errorf("no_payer_device probe = %+v", deviceless)
+	}
 
-		masked := sourceFeatures[name]
-		for i := range base.Values {
-			changed := without.Values[i] != base.Values[i]
-			switch {
-			case slices.Contains(masked, i) && without.Values[i] != 0:
-				t.Errorf("%s: feature %d is %v without the source, want 0", name, i, without.Values[i])
-			case !slices.Contains(masked, i) && changed:
-				t.Errorf("%s: feature %d changed without the source, but the probe does not mask it", name, i)
-			}
-		}
-
-		// The complete example exercises every feature of the source, so
-		// the probe changes the vector exactly as the missing source does.
-		probe := probe{masked: masked}
-		if got := probe.apply(base.Values[:]); !reflect.DeepEqual(got, without.Values[:]) {
-			t.Errorf("%s: probe gives %v, preparation without the source gives %v", name, got, without.Values)
-		}
+	values := make([]float64, pixrisk.FeatureCount)
+	for i := range values {
+		values[i] = 0.5
+	}
+	applied := keyless.apply(values)
+	if applied[indexNoPixKey] != 1 || applied[featureIndex(t, "key_ownership_age")] != 0 ||
+		applied[featureIndex(t, "person_fraud_markers_d90")] != 0.5 || values[indexNoPixKey] != 0.5 {
+		t.Errorf("apply = %v", applied)
 	}
 }
 

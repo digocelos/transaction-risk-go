@@ -299,3 +299,98 @@ func TestTemplateWorkflow(t *testing.T) {
 		}
 	}
 }
+
+// A version 3 configuration trains, publishes, promotes, and inspects
+// through the built commands: the artifact records the version and the
+// loss, the unexercised features have zero weights, and the inspection
+// reports them.
+func TestConfigurationV3Workflow(t *testing.T) {
+	bin, work := commands(t), t.TempDir()
+
+	// The selection fixture is small enough that several features are
+	// never exercised; it has two legitimate and two fraud validation
+	// records, with train_end 2026-05-31 and validation_end 2026-06-15.
+	const dataset = "training/testdata/pix-risk-v1-selection.jsonl"
+
+	// The regularized example with the fixture's boundaries, a feasible
+	// false positive limit for two legitimate validation records, and
+	// fewer epochs.
+	config := read(t, filepath.Join(root, "docs/contracts/training-config-examples/15-v3-regularized.json"))
+	for old, new := range map[string]string{
+		`"train_end": "2026-06-05T00:00:00Z"`:      `"train_end": "2026-05-31T00:00:00Z"`,
+		`"validation_end": "2026-06-12T00:00:00Z"`: `"validation_end": "2026-06-15T00:00:00Z"`,
+		`"max_false_positive_rate": 0.05`:          `"max_false_positive_rate": 0.5`,
+		`"max_epochs": 3000`:                       `"max_epochs": 100`,
+	} {
+		if !bytes.Contains(config, []byte(old)) {
+			t.Fatalf("the example no longer contains %s", old)
+		}
+		config = bytes.Replace(config, []byte(old), []byte(new), 1)
+	}
+	configPath := write(t, filepath.Join(work, "v3.json"), config)
+
+	runDir, model := filepath.Join(work, "run"), filepath.Join(work, "model.json")
+	trained := run(t, bin, "train", nil, "-config", configPath, "-dataset", dataset, "-run-dir", runDir)
+	if trained.code != 0 {
+		t.Fatalf("train: %d\n%s", trained.code, trained.stderr)
+	}
+	if !strings.Contains(trained.stderr, "their first-layer weights are 0") {
+		t.Errorf("train did not name the unexercised features:\n%s", trained.stderr)
+	}
+	if s := run(t, bin, "promote", nil, "-run", runDir, "-output", model); s.code != 0 {
+		t.Fatalf("promote: %d\n%s", s.code, s.stderr)
+	}
+
+	var artifact struct {
+		Network struct {
+			Loss   string `json:"loss"`
+			Layers []struct {
+				Weights [][]float64 `json:"weights"`
+			} `json:"layers"`
+		} `json:"network"`
+		Training struct {
+			ConfigVersion string `json:"config_version"`
+		} `json:"training"`
+		Features struct {
+			Descriptor []struct {
+				Name string `json:"name"`
+			} `json:"descriptor"`
+		} `json:"features"`
+	}
+	if err := json.Unmarshal(read(t, model), &artifact); err != nil {
+		t.Fatal(err)
+	}
+	if artifact.Network.Loss != "binary-cross-entropy" || artifact.Training.ConfigVersion != "pix-training-config-v3" {
+		t.Errorf("artifact records %s %s", artifact.Network.Loss, artifact.Training.ConfigVersion)
+	}
+
+	inspection := filepath.Join(work, "inspection.json")
+	var inspected struct {
+		Status              string   `json:"status"`
+		UnexercisedFeatures []string `json:"unexercised_features"`
+	}
+	decode(t, "inspect", run(t, bin, "inspect", nil, "-run", runDir, "-dataset", dataset, "-output", inspection), 0, &inspected)
+	if len(inspected.UnexercisedFeatures) == 0 {
+		t.Fatal("the fixture exercises every feature")
+	}
+	for _, name := range inspected.UnexercisedFeatures {
+		index := slices.IndexFunc(artifact.Features.Descriptor, func(f struct {
+			Name string `json:"name"`
+		}) bool {
+			return f.Name == name
+		})
+		for neuron, weights := range artifact.Network.Layers[0].Weights {
+			if weights[index] != 0 {
+				t.Errorf("%s: neuron %d weight %v, want 0", name, neuron, weights[index])
+			}
+		}
+	}
+
+	// The same configuration as a version 2 document is invalid, and the
+	// version 3 document with the version 2 values trains the baseline.
+	v2 := bytes.Replace(config, []byte(`"pix-training-config-v3"`), []byte(`"pix-training-config-v2"`), 1)
+	if s := run(t, bin, "train", nil, "-config", write(t, filepath.Join(work, "v2.json"), v2), "-dataset", dataset, "-run-dir", filepath.Join(work, "r2")); s.code != 1 ||
+		!strings.Contains(s.stderr, "/initialization: unknown_member") {
+		t.Errorf("a version 2 document with version 3 members: exit %d\n%s", s.code, s.stderr)
+	}
+}

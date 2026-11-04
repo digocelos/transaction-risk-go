@@ -104,7 +104,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		for _, issue := range invalidConfig.Issues {
 			fmt.Fprintf(stderr, "train: %s: %s: %s: %s\n", opts.config, issue.Path, issue.Code, issue.Message)
 		}
-		return fail("%s is not a valid %s configuration", opts.config, trainingconfig.Version)
+		return fail("%s is not a valid configuration (%s)", opts.config, strings.Join(trainingconfig.Versions(), " or "))
 	case err != nil:
 		return fail("%v", err)
 	}
@@ -159,6 +159,14 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 
 	report := result.Report
 	logPartitions(stderr, report.Dataset.Records, report.Partitions)
+	if len(result.UnexercisedFeatures) > 0 {
+		weights := "their first-layer weights are the random initialization"
+		if config.ZeroUnexercisedInputs {
+			weights = "their first-layer weights are 0"
+		}
+		fmt.Fprintf(stderr, "train: no usable train record exercises %s; %s\n",
+			strings.Join(result.UnexercisedFeatures, ", "), weights)
+	}
 	fmt.Fprintf(stderr, "train: selected epoch %d of %d trained (%s, stopped by %s); threshold %v (%s)\n",
 		report.Selection.SelectedEpoch, report.Selection.ActualEpochs, report.Selection.CheckpointPolicy,
 		report.Selection.StopReason, report.Selection.Threshold.Value, report.Selection.Threshold.Policy)
