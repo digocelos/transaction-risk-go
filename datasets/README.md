@@ -1,4 +1,101 @@
-# Scenario dataset `pix-training-scenarios-v1`
+# Scenario datasets
+
+Two synthetic, scenario-driven training datasets in the [`pix-training-csv-v1`](../docs/contracts/pix-training-csv-v1.md) layout. Each file is an artifact with its own name: [`pix-training-scenarios-v1.csv`](pix-training-scenarios-v1.csv), the first one, and [`pix-training-scenarios-v2.csv`](pix-training-scenarios-v2.csv), which holds every v1 row and adds the scenarios the [inspection](../docs/contracts/pix-model-inspection-v1.md) of a v1 model showed to be missing. Both are for exercising the pipeline, not for certifying a model; [`docs/readiness.md`](../docs/readiness.md) applies to any metric computed on them.
+
+- [`pix-training-scenarios-v2`](#scenario-dataset-pix-training-scenarios-v2): 8,757 rows, 787 frauds in 81 campaigns across 16 fraud archetypes, and the hard negatives that mirror them.
+- [`pix-training-scenarios-v1`](#scenario-dataset-pix-training-scenarios-v1): 8,000 rows, 480 frauds in 48 campaigns across 12 fraud archetypes.
+
+## Scenario dataset `pix-training-scenarios-v2`
+
+`pix-training-scenarios-v2.csv` is `pix-training-scenarios-v1.csv` plus 757 rows: four fraud archetypes, their hard negatives, and a share of unavailable DICT observations that is higher for frauds than for legitimate payments. The v1 rows are unchanged, so the [v1 catalog](#scenario-catalog) still describes them; this section describes what v2 adds and what it changed in a trained model.
+
+### Why
+
+The [inspection](../docs/contracts/pix-model-inspection-v1.md) of the model trained on v1 with the [example configuration](#training-on-it) found shortcuts the dataset made true: a Pix key linked to two accounts in twelve months was a signature of legitimate recipients who moved banks and never of a fraud, so forcing `key_distinct_accounts_m12` to 3 dropped the share of flagged frauds from 96 % to 79 %, and to 2 % at 50; no fraud paid by typed account data without a key was a scam of the main archetypes; no campaign split a transfer into many small payments, so `initiated_count_24h` reached 16 at most; twelve-month fraud markers reached 12 at most; and unavailable observations were drawn independently of the label, so the model could learn nothing about them. v2 adds rows for each of these, so a model trained on it can be inspected for the same questions.
+
+### Shape
+
+| Property | Value |
+|---|---|
+| Rows | 8,757: 787 `fraud` (9.0 %) and 7,970 `legitimate` |
+| Decision times | 2025-04-01 to 2026-06-30, written with the offset `-03:00` |
+| `label_as_of` | `2026-10-01T00:00:00.000-03:00` for every record; every label is mature |
+| Classification | 8,715 usable (785 `fraud`, 7,930 `legitimate`), 42 insufficient, 0 immature, 0 invalid |
+| Losses | Legitimate: `0`. Fraud: the full amount for 653, a partial loss for 94, unknown for 40 |
+| Group keys | 81 campaigns: the 48 of v1 and 33 new ones, `c049` to `c081`; empty for legitimate payments |
+
+### Added scenarios
+
+Fraud, 307 rows in 33 campaigns:
+
+| Id | Scenario | Rows | Campaigns | Signature |
+|---|---|---:|---:|---|
+| F13 | Ported mule key: a mule buys an account whose key was linked elsewhere before | 140 | 16 | `distinct_accounts.m12` of 2 to 6 (most campaigns 3 or more), key ownership 400 to 2,500 days old, link 1 to 14 days old, account opened within 30 days of the link; R$500 to R$5,000; first payment; the marker progression of a cloned-WhatsApp, fake-store, fake-rental, or fake-call-center campaign. |
+| F14 | Keyless scam: a fake call center or cloned WhatsApp paid by typed account data | 68 | 7 | `no_pix_key`; the recipient person's statistics as in the mirrored campaign, the recipient account entry present for half of the rows; the amounts and timing of F1 and F2. |
+| F15 | Split payments: a ghost hand or takeover drains an account in small payments | 63 | 6 | 8 to 12 payments of R$50 to R$200 from one payer within a few hours, `initiated_outgoing_pix_24h.count` rising from 3 to 8 up to about 60, the period limit's consumption growing with each payment; the device and recipient of F5 or F6. |
+| F16 | Heavily marked mule: a long-running mule or aggregator | 36 | 4 | `mule_accounts` 20 to 500 in `d90` and 20 to 200 in `m12`, 15 to 100 distinct reporters in `m12`, 5 to 40 open reports, settlements in the thousands, 3 to 8 registered accounts, a key linked to 3 or 4 accounts; the amounts and payers of F11. |
+| F17 | Correlated missingness | — | — | Applied to F13 to F16: 15 % of their rows have one DICT group of the person or the key unavailable, and 5 % every group, against 3 % of the added legitimate rows with one group unavailable. In v1, unavailability was independent of the label. |
+
+Legitimate, 450 rows, as hard negatives:
+
+| Id | Scenario | Rows | Signature |
+|---|---|---:|---|
+| L13 | Movers | 150 | Recipients whose key is linked to a second account in twelve months, 15 of them to a third, with the key owned for years: more of L1 and L3, so a ported key alone stays ambiguous. |
+| L14 | Keyless legitimate payments | 120 | More of L7: Pix Automático bills and corporate payments by account data, companies and persons. |
+| L15 | Frequent small payments | 120 | A known recipient, R$20 to R$200, with 10 to 40 payments initiated in 24 hours: merchants paid many times a day and bill days. Mirrors F15. |
+| L16 | Cleared aggregators | 60 | Companies settling thousands of payments in 90 days, no fraud marker, 1 to 3 rejected reports in twelve months and at most one open. Mirrors F16. |
+
+Every added row is a v1 row of the mirrored scenario, moved to a new decision time with every timestamp shifted by the same amount, so ages, staleness, and the point-in-time rule hold, and then changed in the columns the signature names. The added fraud campaigns are placed so that each archetype has campaigns in the train, validation, and test partitions of the example configuration.
+
+### By partition
+
+With the boundaries of the [example configuration](#training-on-it):
+
+| Partition | Decision times | Usable fraud | Usable legitimate |
+|---|---|---:|---:|
+| Train | up to 2026-01-31 | 447 | 4,832 |
+| Validation | 2026-02-01 to 2026-04-30 | 181 | 1,757 |
+| Test | from 2026-05-01 | 157 | 1,341 |
+
+Four campaigns cross the train boundary; the training report shows 4 shared group keys and 5 records sharing a train key.
+
+### What changed in a trained model
+
+The example configuration, trained on v2 and inspected with `cmd/inspect`, against the same configuration trained on v1 (validation partition, partial dependence with every other feature as the record has it):
+
+| Question | v1 model | v2 model |
+|---|---|---|
+| Mean fraud score, share of frauds flagged, with `key_distinct_accounts_m12` forced to 1 / 2 / 3 / 5 | 0.913, 0.814, 0.680, 0.481; 96 %, 89 %, 79 %, 58 % | 0.895, 0.881, 0.866, 0.836; 98 %, 98 %, 95 %, 94 % |
+| Train range of `key_distinct_accounts_m12`, `initiated_count_24h`, `person_fraud_markers_m12` | 0 to 3, 0 to 16, 0 to 12 | 0 to 6, 0 to 66, 0 to 153 |
+| Moves against the expected direction inside the train range, `initiated_count_24h` | 0 of 4 | 0 of 4 |
+| Detected validation and test frauds still flagged after their amount is split 10 ways and the 24-hour count raised accordingly | 94 % (165 of 175) | 86 % (283 of 329) |
+| Validation frauds falling below the threshold when the key entry is masked | 14 of 110 | 14 of 181 |
+| Test precision, recall, PR-AUC at the selected threshold | 0.773, 0.883, 0.936 | 0.873, 0.962, 0.971 |
+
+The score still falls as `key_distinct_accounts_m12` grows, by 0.06 from 1 to 5 instead of 0.43, because v2 keeps the 1,174 legitimate movers of v1 at 2 and adds 150 more, against about 130 frauds at 2 or more: in this data, a key on a second account remains mostly legitimate, and a model trained with the mean squared error learns that contrast more strongly than the rarer frauds at 3 to 6. The clipping of [`pix-risk-v2`](../docs/contracts/pix-risk-v2.md) bounds the extrapolation beyond the train range; the direction inside it is a property of the data. A [`pix-training-config-v3`](../docs/contracts/pix-training-config-v3.md) run with the cross-entropy, scaled initialization, and availability dropout on v2 cuts the direction violations from 74 to 29, removes every violation of `initiated_count_24h` and `person_fraud_markers_m12`, and keeps 88 % of the detected frauds flagged after a 10-way split, but does not change this one. The split test is not part of the inspection report; it was measured with a scratch program that divides each detected fraud's amount by 10, scales its ratio to the median and its limit utilization accordingly, and adds 9 to its 24-hour count.
+
+### Converting and training
+
+```bash
+mkdir -p data/runs
+go run ./cmd/convert -input datasets/pix-training-scenarios-v2.csv -output data/scenarios-v2.jsonl
+go run ./cmd/train -config data/scenarios-config.json -dataset data/scenarios-v2.jsonl -run-dir data/runs/scenarios-v2
+go run ./cmd/promote -run data/runs/scenarios-v2 -output data/scenarios-v2-model.json
+go run ./cmd/inspect -run data/runs/scenarios-v2 -dataset data/scenarios-v2.jsonl -output data/scenarios-v2-inspection.json
+go run ./cmd/evaluate -model data/scenarios-v2-model.json -dataset data/scenarios-v2.jsonl -partition test -output data/scenarios-v2-evaluation.json
+```
+
+`convert` reports 8,757 rows: 8,715 usable (785 fraud, 7,930 legitimate), 42 insufficient, and 0 immature. `data/scenarios-config.json` is the [example configuration](#training-on-it) of v1, whose boundaries fit v2 as well.
+
+### How v2 was made
+
+A standalone Python program with a fixed seed, 53, read the v1 file and wrote v2. It is not versioned: the CSV file is the artifact. `cmd/convert` validated its output, and every problem was fixed in the program until `convert` reported none. `TestScenarioDataset` in [`internal/e2e`](../internal/e2e/dataset_test.go) converts both files with the `convert` command built from the checkout and checks their summaries.
+
+### Caveats
+
+Those of v1, and: the added rows are mutations of v1 rows, so a payer, a device, or a recipient of v1 reappears with a shifted history; the new frauds are as separable by design as the old ones; and the fraud share, 9 %, is further from a real rate than v1's 6 %.
+
+## Scenario dataset `pix-training-scenarios-v1`
 
 [`pix-training-scenarios-v1.csv`](pix-training-scenarios-v1.csv) is a synthetic, scenario-driven training dataset for payer-side Pix fraud models, in the [`pix-training-csv-v1`](../docs/contracts/pix-training-csv-v1.md) layout. Each row is one Pix payment, with the scoring input as it existed at decision time and the outcome observed later. The rows come from named fraud and legitimate scenarios played out over 15 months, so every record has a story you can read in its values.
 
@@ -162,7 +259,7 @@ The file was written once by a standalone Go program that uses only the standard
 
 ## How it stays honest
 
-`TestScenarioDataset` in [`internal/e2e`](../internal/e2e/dataset_test.go) converts this file with the `convert` command built from the checkout and checks the summary: 8,000 rows, 7,960 usable records with 478 frauds, 40 insufficient, no immature or invalid record. An edit to the file that breaks a contract rule or changes these counts fails CI, and so does a contract change the file no longer meets.
+`TestScenarioDataset` in [`internal/e2e`](../internal/e2e/dataset_test.go) converts this file and the v2 file with the `convert` command built from the checkout and checks the summaries: for v1, 8,000 rows, 7,960 usable records with 478 frauds, 40 insufficient, no immature or invalid record. An edit to a file that breaks a contract rule or changes these counts fails CI, and so does a contract change the file no longer meets.
 
 ## Caveats
 
