@@ -1,13 +1,53 @@
 # Scenario datasets
 
-Two synthetic, scenario-driven training datasets in the [`pix-training-csv-v1`](../docs/contracts/pix-training-csv-v1.md) layout. Each file is an artifact with its own name: [`pix-training-scenarios-v1.csv`](pix-training-scenarios-v1.csv), the first one, and [`pix-training-scenarios-v2.csv`](pix-training-scenarios-v2.csv), which holds every v1 row and adds the scenarios the [inspection](../docs/contracts/pix-model-inspection-v1.md) of a v1 model showed to be missing. Both are for exercising the pipeline, not for certifying a model; [`docs/readiness.md`](../docs/readiness.md) applies to any metric computed on them.
+Synthetic, scenario-driven training datasets for payer-side Pix fraud models. The file the toolkit reads today is [`pix-training-scenarios-v3.csv`](pix-training-scenarios-v3.csv), in the [`pix-training-csv-v2`](../docs/contracts/pix-training-csv-v2.md) layout: the rows of version 2 with the column the layout added, `observations.payer_account.initiated_outgoing_pix_24h.amount_cents`, filled for every row. Versions 1 and 2 left the tree when their layout stopped being convertible (ADR 0024); they remain in the repository history, at the commits that added them, [`d5471af`](https://github.com/digocelos/transaction-risk-go/commit/d5471af) and [`158c9a2`](https://github.com/digocelos/transaction-risk-go/commit/158c9a2), and the sections below still describe their rows, which version 3 keeps. Every file is for exercising the pipeline, not for certifying a model; [`docs/readiness.md`](../docs/readiness.md) applies to any metric computed on them.
 
+- [`pix-training-scenarios-v3`](#scenario-dataset-pix-training-scenarios-v3): version 2 plus the amount initiated in 24 hours.
 - [`pix-training-scenarios-v2`](#scenario-dataset-pix-training-scenarios-v2): 8,757 rows, 787 frauds in 81 campaigns across 16 fraud archetypes, and the hard negatives that mirror them.
 - [`pix-training-scenarios-v1`](#scenario-dataset-pix-training-scenarios-v1): 8,000 rows, 480 frauds in 48 campaigns across 12 fraud archetypes.
 
+## Scenario dataset `pix-training-scenarios-v3`
+
+`pix-training-scenarios-v3.csv` is `pix-training-scenarios-v2.csv` with one column, the amount initiated from the payer account in the last 24 hours, which [`pix-payer-input-v3`](../docs/contracts/pix-payer-input-v3.md) requires and [`pix-risk-v3`](../docs/features/pix-risk-v3.md) reads. Every row, campaign, label, and other value is as in version 2, and so are the counts: 8,757 rows, 8,715 usable (785 fraud, 7,930 legitimate), 42 insufficient.
+
+### The amount initiated
+
+For a row whose 24-hour count is `c`, the amount is the sum of `c` draws around the payer's median payment, between 0.4 and 1.8 times it, or 0 when `c` is 0. For the split-payment campaigns (F15), it is the story's: the parts of the transfer already initiated that day, plus the payer's ordinary payments, so the k-th part sees the sum of the k − 1 parts before it. A row whose 24-hour history is unavailable keeps the cell empty.
+
+### Converting and training
+
+```bash
+mkdir -p data/runs
+go run ./cmd/convert -input datasets/pix-training-scenarios-v3.csv -output data/scenarios-v3.jsonl
+go run ./cmd/train -config data/scenarios-config.json -dataset data/scenarios-v3.jsonl -run-dir data/runs/scenarios-v3
+go run ./cmd/promote -run data/runs/scenarios-v3 -output data/scenarios-v3-model.json
+go run ./cmd/inspect -run data/runs/scenarios-v3 -dataset data/scenarios-v3.jsonl -output data/scenarios-v3-inspection.json
+go run ./cmd/evaluate -model data/scenarios-v3-model.json -dataset data/scenarios-v3.jsonl -partition test -output data/scenarios-v3-evaluation.json
+```
+
+`data/scenarios-config.json` is the [example configuration](#training-on-it) with `feature_schema` set to `pix-risk-v3`. `TestScenarioDataset` in [`internal/e2e`](../internal/e2e/dataset_test.go) converts the file with the `convert` command built from the checkout and checks the counts above.
+
+### What changed in a trained model
+
+The example configuration, trained on v3 and inspected, against the same configuration trained on v2 (the v2 model reads `pix-risk-v2`, the v3 model `pix-risk-v3`; validation and test partitions):
+
+| Question | v2 model | v3 model |
+|---|---|---|
+| Detected validation and test frauds still flagged after their amount is split 10 ways, with the 24-hour count and amount raised accordingly | 86 % (283 of 329) | 96 % (318 of 332) |
+| Same, split 50 ways | 78 % | 91 % |
+| Moves against the expected direction, all features | 74 | 36 |
+| Train range of `initiated_amount_24h`; violations of its direction | — | 0 to 2,340,456 centavos; none |
+| Test precision, recall, PR-AUC at the selected threshold | 0.873, 0.962, 0.971 | 0.778, 0.981, 0.977 |
+
+The split test is not part of the inspection report; it was measured with a scratch program that divides each detected fraud's amount by N, adds N − 1 to its 24-hour count and the N − 1 earlier parts to its 24-hour amount, and scales its ratios accordingly. The v3 model selects a lower threshold at the same false positive limit, so its precision is lower and its recall higher; the shortcut on `key_distinct_accounts_m12` remains, as the v2 section explains.
+
+### How v3 was made
+
+A standalone Python program with a fixed seed, 58, read the v2 file and wrote v3. It is not versioned: the CSV file is the artifact.
+
 ## Scenario dataset `pix-training-scenarios-v2`
 
-`pix-training-scenarios-v2.csv` is `pix-training-scenarios-v1.csv` plus 757 rows: four fraud archetypes, their hard negatives, and a share of unavailable DICT observations that is higher for frauds than for legitimate payments. The v1 rows are unchanged, so the [v1 catalog](#scenario-catalog) still describes them; this section describes what v2 adds and what it changed in a trained model.
+`pix-training-scenarios-v2.csv`, in the repository history, is `pix-training-scenarios-v1.csv` plus 757 rows: four fraud archetypes, their hard negatives, and a share of unavailable DICT observations that is higher for frauds than for legitimate payments. The v1 rows are unchanged, so the [v1 catalog](#scenario-catalog) still describes them; this section describes what v2 adds and what it changed in a trained model.
 
 ### Why
 
@@ -72,7 +112,7 @@ The example configuration, trained on v2 and inspected with `cmd/inspect`, again
 | Validation frauds falling below the threshold when the key entry is masked | 14 of 110 | 14 of 181 |
 | Test precision, recall, PR-AUC at the selected threshold | 0.773, 0.883, 0.936 | 0.873, 0.962, 0.971 |
 
-The score still falls as `key_distinct_accounts_m12` grows, by 0.06 from 1 to 5 instead of 0.43, because v2 keeps the 1,174 legitimate movers of v1 at 2 and adds 150 more, against about 130 frauds at 2 or more: in this data, a key on a second account remains mostly legitimate, and a model trained with the mean squared error learns that contrast more strongly than the rarer frauds at 3 to 6. The clipping of [`pix-risk-v2`](../docs/features/pix-risk-v2.md) bounds the extrapolation beyond the train range; the direction inside it is a property of the data. A [`pix-training-config-v3`](../docs/contracts/pix-training-config-v3.md) run with the cross-entropy, scaled initialization, and availability dropout on v2 cuts the direction violations from 74 to 29, removes every violation of `initiated_count_24h` and `person_fraud_markers_m12`, and keeps 88 % of the detected frauds flagged after a 10-way split, but does not change this one. The split test is not part of the inspection report; it was measured with a scratch program that divides each detected fraud's amount by 10, scales its ratio to the median and its limit utilization accordingly, and adds 9 to its 24-hour count.
+The score still falls as `key_distinct_accounts_m12` grows, by 0.06 from 1 to 5 instead of 0.43, because v2 keeps the 1,174 legitimate movers of v1 at 2 and adds 150 more, against about 130 frauds at 2 or more: in this data, a key on a second account remains mostly legitimate, and a model trained with the mean squared error learns that contrast more strongly than the rarer frauds at 3 to 6. The clipping of [`pix-risk-v3`](../docs/features/pix-risk-v3.md) bounds the extrapolation beyond the train range; the direction inside it is a property of the data. A [`pix-training-config-v3`](../docs/contracts/pix-training-config-v3.md) run with the cross-entropy, scaled initialization, and availability dropout on v2 cuts the direction violations from 74 to 29, removes every violation of `initiated_count_24h` and `person_fraud_markers_m12`, and keeps 88 % of the detected frauds flagged after a 10-way split, but does not change this one. The split test is not part of the inspection report; it was measured with a scratch program that divides each detected fraud's amount by 10, scales its ratio to the median and its limit utilization accordingly, and adds 9 to its 24-hour count.
 
 ### Converting and training
 
@@ -97,7 +137,7 @@ Those of v1, and: the added rows are mutations of v1 rows, so a payer, a device,
 
 ## Scenario dataset `pix-training-scenarios-v1`
 
-[`pix-training-scenarios-v1.csv`](pix-training-scenarios-v1.csv) is a synthetic, scenario-driven training dataset for payer-side Pix fraud models, in the [`pix-training-csv-v1`](../docs/contracts/pix-training-csv-v1.md) layout. Each row is one Pix payment, with the scoring input as it existed at decision time and the outcome observed later. The rows come from named fraud and legitimate scenarios played out over 15 months, so every record has a story you can read in its values.
+`pix-training-scenarios-v1.csv` is a synthetic, scenario-driven training dataset for payer-side Pix fraud models, in the [`pix-training-csv-v2`](../docs/contracts/pix-training-csv-v2.md) layout. Each row is one Pix payment, with the scoring input as it existed at decision time and the outcome observed later. The rows come from named fraud and legitimate scenarios played out over 15 months, so every record has a story you can read in its values.
 
 ## What it is and is not
 
@@ -112,7 +152,7 @@ Those of v1, and: the added rows are mutations of v1 rows, so a payer, a device,
 |---|---|
 | Rows | 8,000: 480 `fraud` (6.0%) and 7,520 `legitimate` |
 | Decision times | 2025-04-01 to 2026-06-30, written with the offset `-03:00`; volume grows over the period, with fewer payments at weekends |
-| `label_as_of` | `2026-10-01T00:00:00.000-03:00` for every record, one export ([`pix-training-example-v2` §7](../docs/contracts/pix-training-example-v2.md#7-outcome)). The shortest gap to a decision time is 92 days, so every label is mature (§9.2). |
+| `label_as_of` | `2026-10-01T00:00:00.000-03:00` for every record, one export ([`pix-training-example-v3` §7](../docs/contracts/pix-training-example-v3.md#7-outcome)). The shortest gap to a decision time is 92 days, so every label is mature (§9.2). |
 | Classification | 7,960 usable (478 `fraud`, 7,482 `legitimate`), 40 insufficient, 0 immature, 0 invalid |
 | Losses | Legitimate: `0`. Fraud: the full amount for most, a partial loss after a MED refund for 63, and unknown (empty) for 23 |
 | Group keys | One per fraud campaign, 48 in all; empty for legitimate payments, which have no campaign |
@@ -172,13 +212,13 @@ Two campaigns cross the train boundary, so the training report shows 2 shared gr
 
 Every fraud campaign runs for 3 to 45 days. A first-party campaign is a ring of payers paying ordinary recipients; every other campaign has one recipient, a mule account with one Pix key, and plays out like this:
 
-1. The mule account opens and its key is linked, at the times the archetype dictates. A key's ownership date never follows its link date (`pix-payer-input-v2` §10).
+1. The mule account opens and its key is linked, at the times the archetype dictates. A key's ownership date never follows its link date (`pix-payer-input-v3` §10).
 2. Victims across the whole Pix system pay the mule during the campaign, 1 to 20 times as many as the dataset holds, from 40 other participants. The dataset's rows are this PSP's victims.
 3. Each payment is reported with a probability of 0.65 (0.45 for investments, 0.75 for coercion, 0.40 for fake jobs), 1 to 10 days later. Investment victims report 7 to 40 days later.
 4. A report opens an infraction report, which stays open for 1 to 7 days. 80% are accepted and become a fraud marker of the archetype's type, such as `scammer_accounts` or `mule_accounts`, from the reporting participant. 20% are rejected and count in `rejected_reports`.
 5. Every settled payment adds to the recipient's settlement counts. Mature mules and takeover mules also carry markers and open reports from before the campaign.
 
-**Point-in-time rule.** A DICT statistic in a row counts only the events that happened before that row's `as_of`, which is never later than `decision_time`. The windows follow DICT's definitions exactly, in Brasília days and months: `d90` is the last 89 days and the current one; `m12` and `m60` are the 12 and 60 months before the current month, so an event of the current month counts in `d90` but not in `m12` (`pix-payer-input-v2` §7). As a result:
+**Point-in-time rule.** A DICT statistic in a row counts only the events that happened before that row's `as_of`, which is never later than `decision_time`. The windows follow DICT's definitions exactly, in Brasília days and months: `d90` is the last 89 days and the current one; `m12` and `m60` are the 12 and 60 months before the current month, so an event of the current month counts in `d90` but not in `m12` (`pix-payer-input-v3` §7). As a result:
 
 - early victims of a campaign see a clean recipient, the hard cases;
 - later victims see open reports first, then markers in `d90`, and, once a month has turned, reporters in `m12`, the easy cases;
@@ -200,7 +240,7 @@ The scenarios use these rules and figures for calibration only; the toolkit enfo
 
 ## Missing and stale observations
 
-Each row draws its availability independently of its label, at the rates of a typical integration: a DICT statistics response that failed (about 1.2% of rows) or came from a stale cache (0.4%), single DICT groups or windows omitted, missing or stale limits, device data, pre-registrations, and entries, and manual payments without a key whose recipient account entry is usually missing. Empty cells follow [`pix-training-csv-v1` §4](../docs/contracts/pix-training-csv-v1.md#4-values) exactly: an empty `as_of` empties its observation, and an omitted subject leaves every cell of it empty. A zero limit is never used, so `train` reports the `zero_limit` state as not exercised.
+Each row draws its availability independently of its label, at the rates of a typical integration: a DICT statistics response that failed (about 1.2% of rows) or came from a stale cache (0.4%), single DICT groups or windows omitted, missing or stale limits, device data, pre-registrations, and entries, and manual payments without a key whose recipient account entry is usually missing. Empty cells follow [`pix-training-csv-v2` §4](../docs/contracts/pix-training-csv-v2.md#4-values) exactly: an empty `as_of` empties its observation, and an omitted subject leaves every cell of it empty. A zero limit is never used, so `train` reports the `zero_limit` state as not exercised.
 
 ## Converting and training
 
