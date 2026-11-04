@@ -187,12 +187,12 @@ func TestDocumentedWorkflow(t *testing.T) {
 		} `json:"model"`
 	}
 	decode(t, "predict", run(t, bin, "predict", nil,
-		"-model", model, "docs/contracts/examples-v2/01-complete.json"), 0, &scored)
+		"-model", model, "docs/contracts/examples-v3/01-complete.json"), 0, &scored)
 	if scored.Status != "scored" || scored.Model.ArtifactSHA256 != trained.ModelSHA256 || scored.Score < 0 || scored.Score > 1 {
 		t.Errorf("predict = %+v", scored)
 	}
 
-	insufficient, err := os.ReadFile(filepath.Join(root, "docs/contracts/examples-v2/13-required-stale.json"))
+	insufficient, err := os.ReadFile(filepath.Join(root, "docs/contracts/examples-v3/13-required-stale.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

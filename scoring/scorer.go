@@ -1,6 +1,6 @@
 // Package scoring scores payer-side Pix payments with a trained
 // pix-risk-model-v2 artifact. A Scorer loads and validates one explicit
-// artifact once and then scores any number of pix-payer-input-v2 documents:
+// artifact once and then scores any number of pix-payer-input-v3 documents:
 // it validates each document, prepares its pix-risk-v2 features with the
 // artifact's frozen preparation state, and runs the network. It never
 // trains, refits, or looks anything up, and it never reads the system
@@ -111,13 +111,13 @@ func (s *Scorer) Model() Model {
 	return s.model
 }
 
-// Score validates a pix-payer-input-v2 document, prepares its pix-risk-v2
+// Score validates a pix-payer-input-v3 document, prepares its pix-risk-v2
 // features, and scores them. An invalid or insufficient document is a
 // result, not an error; an error means the scorer itself failed.
 func (s *Scorer) Score(document []byte) (Result, error) {
 	result := Result{Model: s.model}
 
-	input, err := pixinput.Decode(document, pixinput.ContractV2)
+	input, err := pixinput.Decode(document, pixinput.ContractV3)
 
 	var invalid *pixinput.ValidationError
 	switch {

@@ -57,7 +57,7 @@ const usage = `usage: train -config FILE -dataset FILE -run-dir DIR
              [-max-records N] [-max-training-work N]
 
 Trains the network a pix-training-config-v2 configuration describes on the
-train partition of a pix-training-example-v2 dataset, prepared with
+train partition of a pix-training-example-v3 dataset, prepared with
 pix-risk-v1, selects it on the validation partition, and publishes a run
 directory: the pix-risk-model-v1 artifact, the training report, the
 canonical configuration, and a manifest. DIR must not exist. Training
@@ -236,7 +236,7 @@ func parse(args []string, stderr io.Writer) (options, error) {
 	}
 
 	fs.StringVar(&opts.config, "config", "", "pix-training-config-v2 configuration `file`")
-	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v2 dataset `file` (JSON Lines)")
+	fs.StringVar(&opts.dataset, "dataset", "", "pix-training-example-v3 dataset `file` (JSON Lines)")
 	fs.StringVar(&opts.runDir, "run-dir", "", "run `directory` to publish; it must not exist")
 	fs.IntVar(&opts.limits.MaxRecords, "max-records", training.DefaultLimits.MaxRecords,
 		"refuse datasets with more `records`")

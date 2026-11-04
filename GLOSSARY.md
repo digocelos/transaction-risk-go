@@ -65,6 +65,9 @@ _Avoid_: Channel
 **Not applicable**:
 The known fact that a subject or a feature does not apply to a Pix payment, such as a recipient Pix key when no key was used; it is stated explicitly and is never missing.
 
+**Initiated amount**:
+The sum of the amounts of the initiated Pix payments the 24-hour count counts, supplied by the integrator with the count; 0 exactly when the count is 0, and the only way the model sees a transfer split into many small payments.
+
 **Initiated Pix payment**:
 A Pix payment instruction that the payer account started, whatever its outcome; technical retries, retransmissions, and reprocessing of the same instruction are not separate initiated payments.
 

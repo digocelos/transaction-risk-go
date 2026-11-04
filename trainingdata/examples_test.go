@@ -9,12 +9,12 @@ import (
 	"testing"
 )
 
-const examplesDir = "../docs/contracts/training-examples-v2"
+const examplesDir = "../docs/contracts/training-examples-v3"
 
 // scanReport scans a dataset and builds its dataset report.
 func scanReport(t *testing.T, data []byte) Report {
 	t.Helper()
-	return scanReportWith(t, data, PixRiskV2)
+	return scanReportWith(t, data, PixRiskV3)
 }
 
 // scanReportWith scans a dataset with a feature schema and builds its
@@ -64,7 +64,7 @@ func TestScanSpecificationExamples(t *testing.T) {
 		t.Fatalf("found %d example datasets, want 11", len(datasets))
 	}
 
-	checkExamples(t, datasets, PixRiskV2)
+	checkExamples(t, datasets, PixRiskV3)
 }
 
 // checkExamples compares the dataset report of each example dataset with
@@ -104,8 +104,8 @@ func TestScanRejectsOtherVersions(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	v1 := strings.Replace(string(v2), `"pix-training-example-v2"`, `"pix-training-example-v1"`, 1)
-	embeddedV1 := strings.Replace(string(v2), `"contract_version":"pix-payer-input-v2"`, `"contract_version":"pix-payer-input-v1"`, 1)
+	v1 := strings.Replace(string(v2), `"pix-training-example-v3"`, `"pix-training-example-v1"`, 1)
+	embeddedV1 := strings.Replace(string(v2), `"contract_version":"pix-payer-input-v3"`, `"contract_version":"pix-payer-input-v1"`, 1)
 
 	tests := []struct {
 		name string
@@ -119,7 +119,7 @@ func TestScanRejectsOtherVersions(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		report := scanReportWith(t, []byte(test.data), PixRiskV2)
+		report := scanReportWith(t, []byte(test.data), PixRiskV3)
 
 		want := []Exclusion{{Line: 1, Category: Invalid, Issues: []IssueReference{test.want}}}
 		if !reflect.DeepEqual(report.Exclusions, want) {

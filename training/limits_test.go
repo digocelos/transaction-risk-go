@@ -43,7 +43,7 @@ func TestRunRefusesTrainingWorkAboveTheLimit(t *testing.T) {
 		return cfg
 	}
 
-	// [62, 4, 1] has 62·4 + 4 + 4·1 + 1 = 257 parameters. pixRiskFixture
+	// [65, 4, 1] has 65·4 + 4 + 4·1 + 1 = 269 parameters. pixRiskFixture
 	// has 4 usable train records; selectionFixture has 6, and 4 usable
 	// validation records.
 	cases := []struct {
@@ -52,9 +52,9 @@ func TestRunRefusesTrainingWorkAboveTheLimit(t *testing.T) {
 		config  trainingconfig.Config
 		work    int64
 	}{
-		{"final epoch", pixRiskFixture, config(), 257 * 4 * 2000},
-		{"best validation", selectionFixture, best(300), 257 * (6*300 + 4*30)},
-		{"best validation with a final evaluation", selectionFixture, best(305), 257 * (6*305 + 4*31)},
+		{"final epoch", pixRiskFixture, config(), 269 * 4 * 2000},
+		{"best validation", selectionFixture, best(300), 269 * (6*300 + 4*30)},
+		{"best validation with a final evaluation", selectionFixture, best(305), 269 * (6*305 + 4*31)},
 	}
 
 	for _, c := range cases {

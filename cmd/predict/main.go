@@ -51,7 +51,7 @@ type insufficientOutput struct {
 
 const usage = `usage: predict -model FILE [scoring-input.json | -]
 
-Scores one pix-payer-input-v2 scoring input with the pix-risk-model-v1
+Scores one pix-payer-input-v3 scoring input with the pix-risk-model-v1
 artifact in FILE, usually the one promote wrote. The input is read from the
 named file, or from standard input when the argument is - or absent. The
 result is one JSON object on standard output, identifying the model; the

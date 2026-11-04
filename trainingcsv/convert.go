@@ -72,10 +72,10 @@ type Summary struct {
 	DatasetBytes  int64                    `json:"dataset_bytes"`
 }
 
-// Convert reads a CSV file in the pix-training-csv-v1 layout and writes one
-// pix-training-example-v2 record per row to w, in row order. Rows whose
+// Convert reads a CSV file in the pix-training-csv-v2 layout and writes one
+// pix-training-example-v3 record per row to w, in row order. Rows whose
 // cells are all empty are skipped. Every record is validated with the
-// strict pix-training-example-v2 decoder; when any row has a problem,
+// strict pix-training-example-v3 decoder; when any row has a problem,
 // Convert returns an *InvalidError with every problem, up to MaxProblems,
 // and what it wrote to w must be discarded. More rows than MaxRecords
 // return a *trainingdata.RecordLimitError. Other errors are failures to
@@ -295,10 +295,10 @@ func (c *converter) write(buffer *bytes.Buffer, n node, path []string) {
 	switch {
 	case path == nil:
 		member("training_example_version")
-		writeString(buffer, trainingdata.TrainingExampleV2)
+		writeString(buffer, trainingdata.TrainingExampleV3)
 	case len(path) == 1 && path[0] == "scoring_input":
 		member("contract_version")
-		writeString(buffer, pixinput.ContractV2)
+		writeString(buffer, pixinput.ContractV3)
 	}
 
 	for _, child := range n.children {
@@ -349,10 +349,10 @@ func (c *converter) mustBeEmpty(n node, path []string, code, message string) {
 	}
 }
 
-// check validates one record with the pix-training-example-v2 decoder and
+// check validates one record with the pix-training-example-v3 decoder and
 // counts it by category.
 func (c *converter) check(line int, data []byte, summary *Summary) {
-	_, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV2, 1, func(r trainingdata.Record) error {
+	_, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV3, 1, func(r trainingdata.Record) error {
 		summary.Records.Total++
 		switch r.Category {
 		case trainingdata.Usable:

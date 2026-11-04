@@ -73,14 +73,14 @@ type Prepared struct {
 	Notes  []Note
 }
 
-// Prepare computes the features of a valid pix-payer-input-v2 scoring
+// Prepare computes the features of a valid pix-payer-input-v3 scoring
 // input. It reads no clock: every age is relative to the input's decision
 // time. A missing or stale required fact yields an *InsufficientInputError
 // and no values.
 func Prepare(input pixinput.ScoringInput) (Prepared, error) {
-	if input.ContractVersion != pixinput.ContractV2 {
+	if input.ContractVersion != pixinput.ContractV3 {
 		return Prepared{}, fmt.Errorf("%s requires a %s scoring input, got %q",
-			Schema, pixinput.ContractV2, input.ContractVersion)
+			Schema, pixinput.ContractV3, input.ContractVersion)
 	}
 
 	p := &preparer{input: input, decisionTime: input.DecisionTime}
@@ -216,10 +216,25 @@ func (p *preparer) payerHistory() {
 	account := p.input.Observations.PayerAccount
 	settled := account.SettledOutgoingPix90d
 
+	initiated := account.InitiatedOutgoingPix24h
+
 	p.set(iSettledCount90d, math.Log1p(float64(settled.Count)))
-	p.set(iInitiatedCount24h, math.Log1p(float64(account.InitiatedOutgoingPix24h.Count)))
+	p.set(iInitiatedCount24h, math.Log1p(float64(initiated.Count)))
 	p.set(iRecipientPayments365d,
 		math.Log1p(float64(p.input.Observations.RecipientPerson.SettledPixFromPayerAccount365d.Count)))
+
+	// pix-risk-v3: the amount initiated in the window, and this payment
+	// against it. Validation guarantees that the amount is 0 exactly when
+	// the count is 0, so the logarithm of the amount is defined whenever
+	// the ratio is.
+	p.set(iInitiatedAmount24h, math.Log1p(float64(initiated.AmountCents)))
+	if initiated.Count == 0 {
+		p.note("/observations/payer_account/initiated_outgoing_pix_24h/amount_cents", StatusNoHistory)
+	} else {
+		p.set(iAmountToInitiated24h,
+			math.Log(float64(p.input.PixPayment.AmountCents))-math.Log(float64(initiated.AmountCents)))
+		p.set(iAmountToInitiated24hKnown, 1)
+	}
 
 	if settled.Count == 0 {
 		p.note("/observations/payer_account/settled_outgoing_pix_90d/median_amount_cents", StatusNoHistory)

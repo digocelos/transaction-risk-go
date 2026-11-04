@@ -8,7 +8,7 @@ import (
 )
 
 // Expected directions of the score as a feature grows, declared in
-// docs/features/pix-risk-v1.md §20. They are expectations about Pix fraud,
+// docs/features/pix-risk-v3.md §20. They are expectations about Pix fraud,
 // not properties of the model: the report measures whether a model follows
 // them.
 const (
@@ -90,6 +90,9 @@ var directions = map[string]string{
 	"key_open_report_reporters_known":    NoDirection,
 	"key_distinct_accounts_m12":          RiskIncreasing,
 	"key_distinct_accounts_m12_known":    NoDirection,
+	"initiated_amount_24h":               RiskIncreasing,
+	"amount_to_initiated_24h":            NoDirection,
+	"amount_to_initiated_24h_known":      NoDirection,
 }
 
 // Direction returns the expected direction of a feature, by name, and
@@ -129,6 +132,8 @@ var scales = map[string]scale{
 	"recipient_account_age":    {UnitDays, false, daysGrid},
 	"key_link_age":             {UnitDays, false, daysGrid},
 	"key_ownership_age":        {UnitDays, false, daysGrid},
+	"initiated_amount_24h":     {UnitCentavos, false, centavosGrid},
+	"amount_to_initiated_24h":  {UnitRatio, true, medianRatioGrid},
 }
 
 func scaleOf(name string) scale {

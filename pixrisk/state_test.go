@@ -15,13 +15,13 @@ import (
 // The descriptor matches the feature tables of the specification: names,
 // order, kinds, and availability indicators.
 func TestDescriptorMatchesTheSpecification(t *testing.T) {
-	data, err := os.ReadFile("../docs/features/pix-risk-v2.md")
+	data, err := os.ReadFile("../docs/features/pix-risk-v3.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	text := string(data)
-	section := text[strings.Index(text, "## 9. Features"):strings.Index(text, "### 9.10")]
+	section := text[strings.Index(text, "## 9. Features"):strings.Index(text, "### 9.11 Summary")]
 	rows := regexp.MustCompile("(?m)^\\| (\\d+) \\| `([a-z0-9_]+)` \\| (\\w+) \\|[^|]*\\| (always|\\d+) \\|$").
 		FindAllStringSubmatch(section, -1)
 

@@ -1,6 +1,6 @@
-// Package pixrisk prepares the features of the feature schema pix-risk-v2
-// from pix-payer-input-v2 scoring inputs, as specified in
-// docs/features/pix-risk-v2.md. Training, evaluation, and scoring share
+// Package pixrisk prepares the features of the feature schema pix-risk-v3
+// from pix-payer-input-v3 scoring inputs, as specified in
+// docs/features/pix-risk-v3.md. Training, evaluation, and scoring share
 // this preparation: Prepare turns one input into values before
 // standardization, Fit learns the standardization, the train range, and
 // the exercised features from the train partition only, and State.Apply
@@ -8,12 +8,14 @@
 package pixrisk
 
 // Schema is the feature schema this package prepares. It replaces
-// pix-risk-v1, which had the same features without the train range and
-// the exercised flags in its state (ADR 0023).
-const Schema = "pix-risk-v2"
+// pix-risk-v2, adding the amount initiated in the last 24 hours and the
+// ratio of the payment to it (ADR 0024); pix-risk-v2 replaced pix-risk-v1,
+// which had the same features without the train range and the exercised
+// flags in its state (ADR 0023).
+const Schema = "pix-risk-v3"
 
-// FeatureCount is the number of features of pix-risk-v2.
-const FeatureCount = 62
+// FeatureCount is the number of features of pix-risk-v3.
+const FeatureCount = 65
 
 // Kind tells how a feature is transformed.
 type Kind string
@@ -93,10 +95,17 @@ var descriptor = func() []Feature {
 		}
 	}
 
+	// pix-risk-v3: the amount initiated in the last 24 hours.
+	features = append(features,
+		Feature{"initiated_amount_24h", Standardized, Always},
+		Feature{"amount_to_initiated_24h", Standardized, len(features) + 2},
+		Feature{"amount_to_initiated_24h_known", Indicator, Always},
+	)
+
 	return features
 }()
 
-// Descriptor returns the features of pix-risk-v2, in order.
+// Descriptor returns the features of pix-risk-v3, in order.
 func Descriptor() []Feature {
 	return append([]Feature(nil), descriptor...)
 }
@@ -143,6 +152,13 @@ const (
 // iKeyStatistics is the first DICT statistics feature of the Pix key; each
 // subject has 7 features, each followed by its indicator.
 const iKeyStatistics = iPersonStatistics + 14
+
+// The 24-hour initiated amount features follow the key statistics.
+const (
+	iInitiatedAmount24h        = iKeyStatistics + 14
+	iAmountToInitiated24h      = iInitiatedAmount24h + 1
+	iAmountToInitiated24hKnown = iInitiatedAmount24h + 2
+)
 
 // Offsets of the DICT statistics features within a subject.
 const (

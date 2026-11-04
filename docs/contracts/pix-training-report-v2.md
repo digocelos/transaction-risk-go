@@ -18,11 +18,11 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 |---|---|---|
 | `training_report_version` | string | `pix-training-report-v2`. |
 | `configuration` | object | `config_sha256`, the configuration's identity, and `config`, its canonical form in its own version ([`pix-training-config-v2` §6](pix-training-config-v2.md#6-canonical-form-and-identity), [`pix-training-config-v3` §6](pix-training-config-v3.md#6-canonical-form-and-identity)); the report's layout does not depend on the configuration version (ADR 0022). |
-| `dataset` | object | The dataset report of [`pix-training-example-v2` §13](pix-training-example-v2.md#13-dataset-report). |
-| `partitions` | object | `train_end`, `validation_end`, the per-partition counts of usable `fraud` and `legitimate`, insufficient, and immature records, and the group overlap ([`pix-training-example-v2` §11](pix-training-example-v2.md#11-temporal-evaluation-protocol)). |
+| `dataset` | object | The dataset report of [`pix-training-example-v3` §13](pix-training-example-v3.md#13-dataset-report). |
+| `partitions` | object | `train_end`, `validation_end`, the per-partition counts of usable `fraud` and `legitimate`, insufficient, and immature records, and the group overlap ([`pix-training-example-v3` §11](pix-training-example-v3.md#11-temporal-evaluation-protocol)). |
 | `coverage` | object | See [section 4](#4-coverage). |
 | `selection` | object | See [section 5](#5-selection). |
-| `validation` | object | The metrics of [`pix-training-example-v2` §11.5](pix-training-example-v2.md#115-metrics) for the validation partition, at the selected threshold. |
+| `validation` | object | The metrics of [`pix-training-example-v3` §11.5](pix-training-example-v3.md#115-metrics) for the validation partition, at the selected threshold. |
 | `test_evaluated` | boolean | Whether the configuration asked for the test evaluation. |
 | `test` | object or `null` | The test metrics at the selected threshold when `test_evaluated` is `true`; otherwise `null`, and the test partition was never scored. |
 
@@ -33,7 +33,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | Member | Meaning |
 |---|---|
 | `usable_records` | The number of usable records. |
-| `populations` | For each supported population of [`pix-risk-v2` §14](../features/pix-risk-v2.md#14-supported-populations), the number of records in it: `new_payer_account`, `no_payer_device`, `no_period_limit`, `no_pix_key`, and `no_recipient_account_entry`. A record can be in several. |
+| `populations` | For each supported population of [`pix-risk-v3` §14](../features/pix-risk-v3.md#14-supported-populations), the number of records in it: `new_payer_account`, `no_payer_device`, `no_period_limit`, `no_pix_key`, and `no_recipient_account_entry`. A record can be in several. |
 | `limit_periods` | The number of records with each `payer_limit_period`: `daytime`, `nighttime`, `daily`, and `no_period_limit`. |
 | `sources` | For each optional source, the number of records in each availability state the source can take: `known`, `missing`, `stale`, `not_applicable` for sources a discriminator can rule out, and `zero_limit` for `period_limit`. A member or window missing inside a known DICT group leaves the group `known`. |
 

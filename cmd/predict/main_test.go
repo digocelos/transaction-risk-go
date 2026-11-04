@@ -22,7 +22,7 @@ import (
 )
 
 const (
-	examplesDir = "../../docs/contracts/examples-v2"
+	examplesDir = "../../docs/contracts/examples-v3"
 	fixture     = "../../training/testdata/pix-risk-v1.jsonl"
 	baseline    = "../../docs/contracts/training-config-examples/01-baseline.json"
 )
@@ -156,8 +156,8 @@ func inputs(t *testing.T) []string {
 			inputs = append(inputs, path)
 		}
 	}
-	if len(inputs) != 20 {
-		t.Fatalf("found %d examples, want 20", len(inputs))
+	if len(inputs) != 21 {
+		t.Fatalf("found %d examples, want 21", len(inputs))
 	}
 	return inputs
 }
@@ -178,7 +178,7 @@ func TestPredictSpecificationExamples(t *testing.T) {
 	wantModel := map[string]any{
 		"artifact_version": "pix-risk-model-v2",
 		"artifact_sha256":  digest(read(t, model)),
-		"feature_schema":   "pix-risk-v2",
+		"feature_schema":   "pix-risk-v3",
 		"threshold":        map[string]any{"policy": artifact.Threshold.Policy, "value": artifact.Threshold.Value},
 	}
 
@@ -203,7 +203,7 @@ func TestPredictSpecificationExamples(t *testing.T) {
 					t.Fatal(err)
 				}
 
-				if r.code != exitScored || got["status"] != "scored" || got["contract_version"] != "pix-payer-input-v2" {
+				if r.code != exitScored || got["status"] != "scored" || got["contract_version"] != "pix-payer-input-v3" {
 					t.Fatalf("exit code %d, stdout %s", r.code, r.stdout)
 				}
 				if score, ok := got["score"].(float64); !ok || score != *want.Score {
@@ -220,7 +220,7 @@ func TestPredictSpecificationExamples(t *testing.T) {
 				}
 			case "insufficient_input":
 				if r.code != exitInsufficientInput || got["status"] != "insufficient_input" ||
-					got["contract_version"] != "pix-payer-input-v2" {
+					got["contract_version"] != "pix-payer-input-v3" {
 					t.Fatalf("exit code %d, stdout %s", r.code, r.stdout)
 				}
 				if !reflect.DeepEqual(got["blockers"], expected["blockers"]) {
@@ -285,7 +285,7 @@ func TestPredictRejectsAnOversizedInput(t *testing.T) {
 	}
 }
 
-// Only pix-payer-input-v2 documents are scored: a version 1 input and a
+// Only pix-payer-input-v3 documents are scored: a version 1 input and a
 // training record, which carries an outcome and a group key, are invalid.
 func TestPredictRejectsOtherDocuments(t *testing.T) {
 	model := writeModel(t)

@@ -291,7 +291,7 @@ func TestDecodeReportsIssues(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Decode(test.input, ContractV2)
+			_, err := Decode(test.input, ContractV3)
 
 			if got := issuesOf(t, err); !reflect.DeepEqual(got, test.want) {
 				t.Errorf("issues = %v\nwant     %v", got, test.want)
@@ -326,7 +326,7 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if _, err := Decode(test.input, ContractV2); err != nil {
+			if _, err := Decode(test.input, ContractV3); err != nil {
 				t.Errorf("Decode() error = %v", err)
 			}
 		})
@@ -336,7 +336,7 @@ func TestDecodeAcceptsBoundaryValues(t *testing.T) {
 func TestDecodePreservesOpenKeyType(t *testing.T) {
 	input, err := Decode(edit(t, map[string]any{
 		"observations/recipient_pix_key/entry/key_type": "NEW_KEY_TYPE_2027",
-	}), ContractV2)
+	}), ContractV3)
 	if err != nil {
 		t.Fatal(err)
 	}

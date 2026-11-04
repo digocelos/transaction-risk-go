@@ -1,5 +1,5 @@
 // Package trainingdata reads training datasets that follow the
-// pix-training-example-v2 contract: it validates and classifies every
+// pix-training-example-v3 contract: it validates and classifies every
 // record, one line at a time, and fingerprints the exact dataset bytes. The
 // feature schema being trained decides which version a dataset must use.
 package trainingdata
@@ -12,8 +12,8 @@ import (
 	"github.com/digocelos/transaction-risk-go/pixrisk"
 )
 
-// TrainingExampleV2 is the training example version this package supports.
-const TrainingExampleV2 = "pix-training-example-v2"
+// TrainingExampleV3 is the training example version this package supports.
+const TrainingExampleV3 = "pix-training-example-v3"
 
 const (
 	// MaxRecordSize is the largest record line, in bytes, excluding its LF.
@@ -109,12 +109,12 @@ type FeatureSchema struct {
 	Blockers               func(pixinput.ScoringInput) ([]Blocker, error)
 }
 
-// PixRiskV2 classifies pix-training-example-v2 records with pix-risk-v2: a
+// PixRiskV3 classifies pix-training-example-v3 records with pix-risk-v3: a
 // record is insufficient when a required fact is missing or stale.
-var PixRiskV2 = FeatureSchema{
+var PixRiskV3 = FeatureSchema{
 	Name:                   pixrisk.Schema,
-	TrainingExampleVersion: TrainingExampleV2,
-	ContractVersion:        pixinput.ContractV2,
+	TrainingExampleVersion: TrainingExampleV3,
+	ContractVersion:        pixinput.ContractV3,
 	Blockers: func(input pixinput.ScoringInput) ([]Blocker, error) {
 		_, err := pixrisk.Prepare(input)
 

@@ -22,7 +22,7 @@ type PreparedExample struct {
 	LossAmountCents *int64
 }
 
-// PreparedDataset is a pix-training-example-v2 dataset prepared with
+// PreparedDataset is a pix-training-example-v3 dataset prepared with
 // pix-risk-v1: its dataset report, its partitions, the state fitted on the
 // train partition, and the usable records of each partition in line order.
 type PreparedDataset struct {
@@ -57,7 +57,7 @@ func PrepareDataset(ctx context.Context, dataset io.Reader, boundaries evaluatio
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV3, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err

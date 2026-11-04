@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-An evaluation measures a saved [`pix-risk-model-v2`](pix-risk-model-v2.md) artifact on an explicit scope of a [`pix-training-example-v2`](pix-training-example-v2.md) dataset, and the evaluation report records the result. `cmd/evaluate` and the `modelevaluation` package produce it (ADR 0017).
+An evaluation measures a saved [`pix-risk-model-v2`](pix-risk-model-v2.md) artifact on an explicit scope of a [`pix-training-example-v3`](pix-training-example-v3.md) dataset, and the evaluation report records the result. `cmd/evaluate` and the `modelevaluation` package produce it (ADR 0017).
 
 Evaluation only reads. It never trains, refits the preparation state, selects a checkpoint, or tunes a threshold, and it never changes the artifact or the dataset. It scores the usable records in scope with the artifact's own preparation state and network, so an artifact evaluated on the partitions of its training dataset reproduces the metrics of its [training report](pix-training-report-v2.md) exactly.
 
@@ -15,7 +15,7 @@ The report describes software behavior on the data supplied. Its metrics are not
 | Input | Rules |
 |---|---|
 | Model artifact | The exact bytes of a `pix-risk-model-v2` artifact, decoded as strictly as [`pix-risk-model-v2` §2](pix-risk-model-v2.md#2-model-artifact) requires. Its SHA-256 identifies it in the report. |
-| Dataset | A `pix-training-example-v2` dataset, read and classified with `pix-risk-v2` exactly as for training ([`pix-training-example-v2` §9](pix-training-example-v2.md#9-record-classification)). A dataset with any invalid record is not evaluated: the evaluation fails with the dataset report and every diagnostic, and no report is written. |
+| Dataset | A `pix-training-example-v3` dataset, read and classified with `pix-risk-v3` exactly as for training ([`pix-training-example-v3` §9](pix-training-example-v3.md#9-record-classification)). A dataset with any invalid record is not evaluated: the evaluation fails with the dataset report and every diagnostic, and no report is written. |
 | Scope | See [section 3](#3-scope). |
 | Threshold override | Optional. A number from 0 to 1 to measure at instead of the artifact's threshold, for this evaluation only. |
 | Reference dataset | Optional. The dataset the model was trained on, to measure group overlap when another dataset is evaluated. Its SHA-256 MUST be the artifact's `dataset_sha256`; otherwise the evaluation fails. |
@@ -32,7 +32,7 @@ The scope selects records by the `decision_time` of their scoring input, compare
 | `test` | `decision_time > validation_end` |
 | Window | `after < decision_time`, and `decision_time ≤ through` when `through` is set |
 
-`train_end` and `validation_end` are the artifact's boundaries. A window's `after` MUST NOT be earlier than `train_end`, and `through`, when set, MUST be later than `after`. The train partition is never evaluated, because metrics on training examples are not evaluation results ([`pix-training-example-v2` §11.2](pix-training-example-v2.md#112-roles)).
+`train_end` and `validation_end` are the artifact's boundaries. A window's `after` MUST NOT be earlier than `train_end`, and `through`, when set, MUST be later than `after`. The train partition is never evaluated, because metrics on training examples are not evaluation results ([`pix-training-example-v3` §11.2](pix-training-example-v3.md#112-roles)).
 
 A scope that reaches past `validation_end` measures held-out data. Software cannot stop a person from evaluating held-out data repeatedly and changing a model after seeing the results; doing so turns that data into validation data, and a changed model needs new held-out data (ADR 0017).
 
@@ -47,14 +47,14 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | `evaluation_report_version` | string | `pix-evaluation-report-v1`. |
 | `software` | object | `module`, `version`, and `revision` of the build that evaluated, as in [`pix-risk-model-v2` §2](pix-risk-model-v2.md#2-model-artifact). |
 | `model` | object | See [section 5.1](#51-model). |
-| `dataset` | object | The dataset report of the evaluated dataset ([`pix-training-example-v2` §13](pix-training-example-v2.md#13-dataset-report)), covering every record, in scope or not. |
+| `dataset` | object | The dataset report of the evaluated dataset ([`pix-training-example-v3` §13](pix-training-example-v3.md#13-dataset-report)), covering every record, in scope or not. |
 | `same_dataset_as_training` | boolean | Whether the evaluated dataset's SHA-256 is the artifact's `dataset_sha256`. |
 | `scope` | object | See [section 5.2](#52-scope). |
 | `records` | object | See [section 5.3](#53-records). |
 | `coverage` | object | The coverage of the usable records in scope: `usable_records`, `populations`, `limit_periods`, and `sources`, as one partition of [`pix-training-report-v2` §4](pix-training-report-v2.md#4-coverage). |
 | `group_overlap` | object | See [section 5.4](#54-group-overlap). |
 | `threshold` | object | `source`, `artifact` or `override`, and `value`, the threshold every metric is measured at. The artifact's own threshold is always `model.threshold`, and an override never changes it. |
-| `metrics` | object | The metrics of [`pix-training-example-v2` §11.5](pix-training-example-v2.md#115-metrics) over the usable records in scope, at `threshold.value`. |
+| `metrics` | object | The metrics of [`pix-training-example-v3` §11.5](pix-training-example-v3.md#115-metrics) over the usable records in scope, at `threshold.value`. |
 | `completeness` | object | See [section 5.5](#55-completeness). |
 
 ### 5.1 Model
@@ -64,8 +64,8 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | `artifact_version` | `pix-risk-model-v2`. |
 | `artifact_sha256` | The SHA-256 of the artifact's exact bytes. |
 | `software` | The build that trained the model, from the artifact. |
-| `contracts` | `scoring_input` `pix-payer-input-v2` and `training_example` `pix-training-example-v2`. |
-| `feature_schema` | `pix-risk-v2`. |
+| `contracts` | `scoring_input` `pix-payer-input-v3` and `training_example` `pix-training-example-v3`. |
+| `feature_schema` | `pix-risk-v3`. |
 | `config_version`, `config_sha256` | The training configuration's version and identity. |
 | `training_report_version`, `training_report_sha256` | The training report's version and the SHA-256 of its exact bytes. |
 | `training_dataset_sha256` | The fingerprint of the training dataset. |
@@ -85,7 +85,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | `out_of_scope` | The records that are not invalid and are outside the scope. |
 | `in_validation_range` | The usable records in scope whose decision time is at or before `validation_end`, the period the model's checkpoint and threshold were chosen on. On the training dataset, those are the validation records themselves. |
 
-Immature records are excluded because their labels may still change ([`pix-training-example-v2` §9.2](pix-training-example-v2.md#92-label-maturity)); a scope close to the dataset's last label as-of time can hold many of them.
+Immature records are excluded because their labels may still change ([`pix-training-example-v3` §9.2](pix-training-example-v3.md#92-label-maturity)); a scope close to the dataset's last label as-of time can hold many of them.
 
 ### 5.4 Group overlap
 

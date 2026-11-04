@@ -1,0 +1,9 @@
+{
+  "blockers": [
+    {
+      "path": "/observations/payer_account/settled_outgoing_pix_90d",
+      "reason": "missing"
+    }
+  ],
+  "status": "insufficient_input"
+}

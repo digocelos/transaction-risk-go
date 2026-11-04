@@ -1,6 +1,6 @@
 // Package modelartifact encodes and decodes the trained model artifact
 // pix-risk-model-v2, as specified in docs/contracts/pix-risk-model-v2.md:
-// everything the toolkit needs to score pix-payer-input-v2 inputs without
+// everything the toolkit needs to score pix-payer-input-v3 inputs without
 // training, and the identities of the configuration, dataset, and report
 // that produced it. Its SHA-256 values detect accidental or deliberate
 // changes; they are not signatures and prove nothing about who made the
@@ -271,7 +271,7 @@ func Marshal(artifact Artifact) ([]byte, error) {
 	value := stored{
 		ArtifactVersion: Version,
 		Software:        artifact.Software,
-		Contracts:       storedContracts{ScoringInput: pixinput.ContractV2, TrainingExample: trainingdata.TrainingExampleV2},
+		Contracts:       storedContracts{ScoringInput: pixinput.ContractV3, TrainingExample: trainingdata.TrainingExampleV3},
 		Features: storedFeatures{
 			FeatureSchema:     pixrisk.Schema,
 			Descriptor:        descriptor(),
@@ -357,7 +357,7 @@ func Decode(data []byte) (Artifact, error) {
 	switch {
 	case value.ArtifactVersion != Version:
 		return Artifact{}, fmt.Errorf("unsupported model artifact version: %q", value.ArtifactVersion)
-	case value.Contracts != storedContracts{ScoringInput: pixinput.ContractV2, TrainingExample: trainingdata.TrainingExampleV2}:
+	case value.Contracts != storedContracts{ScoringInput: pixinput.ContractV3, TrainingExample: trainingdata.TrainingExampleV3}:
 		return Artifact{}, fmt.Errorf("unsupported contracts: %+v", value.Contracts)
 	case features.FeatureSchema != pixrisk.Schema:
 		return Artifact{}, fmt.Errorf("unsupported feature schema: %q", features.FeatureSchema)

@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/digocelos/transaction-risk-go/pixrisk"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,7 @@ import (
 
 const (
 	fixture        = "../../training/testdata/pix-risk-v1.jsonl"
-	invalidDataset = "../../docs/contracts/training-examples-v2/dataset.jsonl"
+	invalidDataset = "../../docs/contracts/training-examples-v3/dataset.jsonl"
 	baseline       = "../../docs/contracts/training-config-examples/01-baseline.json"
 )
 
@@ -189,8 +190,8 @@ func TestTrainWritesTraceableArtifacts(t *testing.T) {
 		t.Errorf("configuration = %+v", run.Config)
 	}
 
-	if _, err := artifact.Network.Predict(make([]float64, 62)); err != nil {
-		t.Errorf("the trained network does not take the 62 pix-risk-v2 features: %v", err)
+	if _, err := artifact.Network.Predict(make([]float64, pixrisk.FeatureCount)); err != nil {
+		t.Errorf("the trained network does not take the 65 pix-risk-v3 features: %v", err)
 	}
 
 	if !strings.Contains(r.stderr, "selected epoch 5000 of 5000 trained") {
@@ -256,7 +257,7 @@ func TestTrainStopsOnInvalidDataset(t *testing.T) {
 	switch {
 	case invalid.Status != "invalid_dataset":
 		t.Errorf("status = %q", invalid.Status)
-	case invalid.Dataset.FeatureSchema != "pix-risk-v2" || invalid.Dataset.TrainingExampleVersion != "pix-training-example-v2":
+	case invalid.Dataset.FeatureSchema != "pix-risk-v3" || invalid.Dataset.TrainingExampleVersion != "pix-training-example-v3":
 		t.Errorf("dataset report = %+v", invalid.Dataset)
 	case invalid.Dataset.Records != records{Total: 10, Usable: 6, Invalid: 2, Insufficient: 1, Immature: 1}:
 		t.Errorf("records = %+v", invalid.Dataset.Records)

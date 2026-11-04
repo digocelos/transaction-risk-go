@@ -12,7 +12,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 
 ## 2. Document
 
-A configuration follows the document rules of [`pix-payer-input-v2` §4](pix-payer-input-v2.md#4-document): at most 65,536 bytes, no byte order mark, valid UTF-8, exactly one JSON object, no duplicate members, and no unknown members at any level. Validation reports every issue with a JSON Pointer `path`, a `code`, and a `message` that is not part of the contract, sorted by `path` and then by `code`. The document, version, structure, and consistency stages are those of [`pix-payer-input-v2` §11.1](pix-payer-input-v2.md#111-stages), with `config_version` in place of `contract_version`.
+A configuration follows the document rules of [`pix-payer-input-v3` §4](pix-payer-input-v3.md#4-document): at most 65,536 bytes, no byte order mark, valid UTF-8, exactly one JSON object, no duplicate members, and no unknown members at any level. Validation reports every issue with a JSON Pointer `path`, a `code`, and a `message` that is not part of the contract, sorted by `path` and then by `code`. The document, version, structure, and consistency stages are those of [`pix-payer-input-v3` §11.1](pix-payer-input-v3.md#111-stages), with `config_version` in place of `contract_version`.
 
 A document whose `config_version` is `pix-training-config-v2` is decoded by [its own contract](pix-training-config-v2.md): the members of this version are unknown members there, and `binary-cross-entropy` is not one of its losses.
 
@@ -23,16 +23,16 @@ Every member is required and none is nullable. The members of version 2 keep the
 | Member | Type | Rules |
 |---|---|---|
 | `config_version` | string | `pix-training-config-v3`. `pix-training-config-v2` is accepted by its own contract; any other value is rejected with `unsupported_config_version`. |
-| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v2`; `pix-risk-v1`, which the toolkit no longer implements, is rejected (ADR 0023). The network's input size is the feature count of this schema, 62. |
+| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v3`; `pix-risk-v1` and `pix-risk-v2`, which the toolkit no longer implements, are rejected (ADR 0023, ADR 0024). The network's input size is the feature count of this schema, 65. |
 | `architecture` | object | See [3.1](#31-architecture). |
 | `initialization` | object | See [3.2](#32-initialization). |
 | `algorithm` | closed enumeration | `full-batch-gradient-descent`: every epoch is one gradient descent step over all usable train records, in dataset line order. |
 | `loss` | closed enumeration | See [3.3](#33-loss). |
 | `regularization` | object | See [3.4](#34-regularization). |
-| `seed` | integer | 0 to 2^53−1, with the integer grammar of `pix-payer-input-v2` §5.1. It seeds the initial weights and, separately, the availability dropout masks. |
+| `seed` | integer | 0 to 2^53−1, with the integer grammar of `pix-payer-input-v3` §5.1. It seeds the initial weights and, separately, the availability dropout masks. |
 | `learning_rate` | number | Greater than 0 and at most 100. Any JSON number syntax is accepted, such as `1`, `0.5`, or `1e-3`. |
 | `max_epochs` | integer | 1 to 1,000,000. The run trains this many epochs unless early stopping ends it sooner. |
-| `boundaries` | object | `train_end` and `validation_end`, both timestamps as in `pix-payer-input-v2` §5.2. `train_end` MUST be earlier than `validation_end`, or `boundaries_out_of_order` is reported at `/boundaries/train_end`. They define the partitions of [`pix-training-example-v2` §11.1](pix-training-example-v2.md#111-partitions). |
+| `boundaries` | object | `train_end` and `validation_end`, both timestamps as in `pix-payer-input-v3` §5.2. `train_end` MUST be earlier than `validation_end`, or `boundaries_out_of_order` is reported at `/boundaries/train_end`. They define the partitions of [`pix-training-example-v3` §11.1](pix-training-example-v3.md#111-partitions). |
 | `selection` | object | See [3.5](#35-selection). |
 
 ### 3.1 Architecture
@@ -67,7 +67,7 @@ The loss is the training objective and the `validation_loss` objective of [3.5](
 | Member | Type | Rules |
 |---|---|---|
 | `l2` | number | 0 to 1. The weight decay coefficient λ: every weight, not bias, also receives the gradient of (λ/2)·weight², so one update is weight − learning_rate·(gradient + λ·weight). The reported losses exclude the decay term. 0 is no decay, as version 2. Decay shrinks weights that carry little signal and divides the credit between collinear inputs, such as the DICT statistics of the recipient person and of the key, instead of letting one of them take it all. |
-| `availability_dropout` | number | 0 to 1. In every epoch, for each usable train record in dataset line order and each optional source of `pix-risk-v2` in the order of [`pix-training-report-v2` §4](pix-training-report-v2.md#4-coverage), one draw from a generator seeded with `seed` decides, with this probability, whether the source's features are set to 0 in that record for that epoch, exactly as the preparation represents an unavailable source ([`pix-risk-v2` §11](../features/pix-risk-v2.md#11-fitted-standardization)): the values and the availability indicators of the source. The generator is separate from the one that draws the initial weights, so the masks of a run depend only on `seed`, the probability, and the order of records and sources. Validation and test records are never masked, and the training loss `cmd/train` prints is measured on the masked records. 0 is no dropout, as version 2. |
+| `availability_dropout` | number | 0 to 1. In every epoch, for each usable train record in dataset line order and each optional source of `pix-risk-v3` in the order of [`pix-training-report-v2` §4](pix-training-report-v2.md#4-coverage), one draw from a generator seeded with `seed` decides, with this probability, whether the source's features are set to 0 in that record for that epoch, exactly as the preparation represents an unavailable source ([`pix-risk-v3` §11](../features/pix-risk-v3.md#11-fitted-standardization)): the values and the availability indicators of the source. The generator is separate from the one that draws the initial weights, so the masks of a run depend only on `seed`, the probability, and the order of records and sources. Validation and test records are never masked, and the training loss `cmd/train` prints is measured on the masked records. 0 is no dropout, as version 2. |
 
 Availability dropout trains the network on records whose optional sources are missing at a rate the dataset may never show, so the availability indicators receive gradient and the response to an unavailable source is learned rather than left at the initialization. It is the only option that changes what the network sees; it does not change the dataset, the preparation state, or any report of the data.
 

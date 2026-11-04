@@ -1,5 +1,5 @@
 // Package modelevaluation evaluates a saved pix-risk-model-v1 artifact on
-// an explicit scope of a pix-training-example-v2 dataset and writes the
+// an explicit scope of a pix-training-example-v3 dataset and writes the
 // evaluation report pix-evaluation-report-v1, as specified in
 // docs/contracts/pix-evaluation-report-v1.md. Evaluation only reads: it
 // never trains, refits the preparation state, selects a checkpoint, or
@@ -154,7 +154,7 @@ func scan(ctx context.Context, dataset io.Reader, artifact modelartifact.Artifac
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV3, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -278,7 +278,7 @@ func trainKey(record trainingdata.Record, trainEnd time.Time) (string, bool) {
 func referenceKeys(ctx context.Context, reference io.Reader, trained modelartifact.Training, maxRecords int) (map[string]bool, error) {
 	keys := map[string]bool{}
 
-	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV3, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -312,7 +312,7 @@ func Identify(artifact modelartifact.Artifact, artifactSHA256 string) Model {
 		ArtifactVersion:       modelartifact.Version,
 		ArtifactSHA256:        artifactSHA256,
 		Software:              artifact.Software,
-		Contracts:             Contracts{ScoringInput: pixinput.ContractV2, TrainingExample: trainingdata.TrainingExampleV2},
+		Contracts:             Contracts{ScoringInput: pixinput.ContractV3, TrainingExample: trainingdata.TrainingExampleV3},
 		FeatureSchema:         pixrisk.Schema,
 		ConfigVersion:         trained.ConfigVersion,
 		ConfigSHA256:          trained.ConfigSHA256,

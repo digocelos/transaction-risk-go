@@ -70,7 +70,7 @@ func TestDecodeSpecificationExamples(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			_, err = Decode(readExample(t, name), ContractV2)
+			_, err = Decode(readExample(t, name), ContractV3)
 
 			if expected.Status != "invalid_input" {
 				if err != nil {
@@ -90,8 +90,8 @@ func TestDecodeSpecificationExamples(t *testing.T) {
 		})
 	}
 
-	if count != 20 {
-		t.Errorf("found %d examples, want 20", count)
+	if count != 21 {
+		t.Errorf("found %d examples, want 21", count)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestDecodeKeepsMissingAndNotApplicableApart(t *testing.T) {
 	decode := func(name string, data []byte) ScoringInput {
 		t.Helper()
 
-		input, err := Decode(data, ContractV2)
+		input, err := Decode(data, ContractV3)
 		if err != nil {
 			t.Fatalf("Decode(%s) error = %v", name, err)
 		}

@@ -57,8 +57,8 @@ func TestPredictSpecificationExamples(t *testing.T) {
 	}
 
 	codes := map[string]int{"prepared": 0, "invalid_input": 2, "insufficient_input": 3}
-	examples, err := filepath.Glob(filepath.Join(root, "docs/contracts/examples-v2/[0-9][0-9]-*.expected.json"))
-	if err != nil || len(examples) != 20 {
+	examples, err := filepath.Glob(filepath.Join(root, "docs/contracts/examples-v3/[0-9][0-9]-*.expected.json"))
+	if err != nil || len(examples) != 21 {
 		t.Fatalf("found %d examples: %v", len(examples), err)
 	}
 
@@ -113,9 +113,9 @@ func TestFailuresWriteNothing(t *testing.T) {
 
 	invalid := write(t, filepath.Join(work, "invalid.jsonl"), append(bytes.Clone(data), []byte("{}\n")...))
 	retired := write(t, filepath.Join(work, "retired.jsonl"),
-		bytes.ReplaceAll(data, []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`)))
+		bytes.ReplaceAll(data, []byte(`"pix-training-example-v3"`), []byte(`"pix-training-example-v1"`)))
 	otherSchema := write(t, filepath.Join(work, "other-schema.json"),
-		bytes.Replace(read(t, filepath.Join(root, benchmarkConfig)), []byte(`"pix-risk-v2"`), []byte(`"transaction-features-v1"`), 1))
+		bytes.Replace(read(t, filepath.Join(root, benchmarkConfig)), []byte(`"pix-risk-v3"`), []byte(`"transaction-features-v1"`), 1))
 
 	artifact := read(t, model)
 	// One weight changes and the artifact stays valid JSON, so only its
@@ -158,7 +158,7 @@ func TestFailuresWriteNothing(t *testing.T) {
 			2, "invalid_dataset", filepath.Join(work, "r2")},
 		{"another feature schema", "train", []string{"-config", otherSchema, "-dataset", dataset, "-run-dir", filepath.Join(work, "r3")},
 			1, "", filepath.Join(work, "r3")},
-		{"damaged artifact, predict", "predict", []string{"-model", damaged, "docs/contracts/examples-v2/01-complete.json"},
+		{"damaged artifact, predict", "predict", []string{"-model", damaged, "docs/contracts/examples-v3/01-complete.json"},
 			1, "", ""},
 		{"damaged artifact, evaluate", "evaluate", []string{"-model", damaged, "-dataset", dataset, "-partition", "test", "-output", filepath.Join(work, "e2.json")},
 			1, "", filepath.Join(work, "e2.json")},
@@ -269,7 +269,7 @@ func TestTemplateWorkflow(t *testing.T) {
 
 	dataset := filepath.Join(work, "training.jsonl")
 	converted := run(t, bin, "convert", nil,
-		"-input", "templates/training-data/pix-training-example-v2.csv", "-output", dataset)
+		"-input", "templates/training-data/pix-training-example-v3.csv", "-output", dataset)
 	var summary struct {
 		Status  string `json:"status"`
 		Records struct {

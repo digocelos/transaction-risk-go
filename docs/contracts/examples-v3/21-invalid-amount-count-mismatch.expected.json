@@ -1,0 +1,9 @@
+{
+  "issues": [
+    {
+      "path": "/observations/payer_account/initiated_outgoing_pix_24h/amount_cents",
+      "code": "amount_count_mismatch"
+    }
+  ],
+  "status": "invalid_input"
+}

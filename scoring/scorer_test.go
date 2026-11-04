@@ -27,7 +27,7 @@ import (
 )
 
 const (
-	examplesDir = "../docs/contracts/examples-v2"
+	examplesDir = "../docs/contracts/examples-v3"
 	fixture     = "../training/testdata/pix-risk-v1.jsonl"
 	baseline    = "../docs/contracts/training-config-examples/01-baseline.json"
 )
@@ -117,7 +117,7 @@ func examples(t testing.TB) []string {
 	return inputs
 }
 
-// expectation is an expected result of the pix-payer-input-v2 examples,
+// expectation is an expected result of the pix-payer-input-v3 examples,
 // whose "prepared" status is "scored" here.
 type expectation struct {
 	Status   string            `json:"status"`
@@ -143,13 +143,13 @@ func TestScoreSpecificationExamples(t *testing.T) {
 	wantModel := scoring.Model{
 		ArtifactVersion: "pix-risk-model-v2",
 		ArtifactSHA256:  digest(model),
-		FeatureSchema:   "pix-risk-v2",
+		FeatureSchema:   "pix-risk-v3",
 		Threshold:       artifact.Threshold,
 	}
 
 	inputs := examples(t)
-	if len(inputs) != 20 {
-		t.Fatalf("found %d examples, want 20", len(inputs))
+	if len(inputs) != 21 {
+		t.Fatalf("found %d examples, want 21", len(inputs))
 	}
 
 	for _, input := range inputs {
@@ -168,7 +168,7 @@ func TestScoreSpecificationExamples(t *testing.T) {
 
 			switch want.Status {
 			case "prepared":
-				if got.Status != scoring.StatusScored || got.ContractVersion != pixinput.ContractV2 {
+				if got.Status != scoring.StatusScored || got.ContractVersion != pixinput.ContractV3 {
 					t.Fatalf("result = %+v, want scored", got)
 				}
 				if got.Score == nil || math.IsNaN(*got.Score) || *got.Score < 0 || *got.Score > 1 {
@@ -181,7 +181,7 @@ func TestScoreSpecificationExamples(t *testing.T) {
 					t.Errorf("a scored result has blockers %v or issues %v", got.Blockers, got.Issues)
 				}
 			case "insufficient_input":
-				if got.Status != scoring.StatusInsufficientInput || got.ContractVersion != pixinput.ContractV2 || got.Score != nil {
+				if got.Status != scoring.StatusInsufficientInput || got.ContractVersion != pixinput.ContractV3 || got.Score != nil {
 					t.Fatalf("result = %+v, want insufficient_input without a score", got)
 				}
 				if !reflect.DeepEqual(got.Blockers, want.Blockers) {
@@ -249,7 +249,7 @@ func TestScoreMatchesTheTrainingPath(t *testing.T) {
 	}
 }
 
-// Only pix-payer-input-v2 documents are scored. A version 1 document and a
+// Only pix-payer-input-v3 documents are scored. A version 1 document and a
 // document carrying training metadata, such as an outcome or a group key,
 // are invalid.
 func TestScoreRejectsOtherDocuments(t *testing.T) {

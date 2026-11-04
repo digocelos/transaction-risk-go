@@ -312,8 +312,8 @@ func excludedTestRecords(t *testing.T, dataset []byte) []byte {
 	t.Helper()
 
 	dataset = replaceLine(t, dataset, 11,
-		`"initiated_outgoing_pix_24h":{"count":2,"as_of":"2026-06-20T17:03:06.874Z"}`,
-		`"initiated_outgoing_pix_24h":{"count":2,"as_of":"2026-06-20T16:00:00Z"}`)
+		`"initiated_outgoing_pix_24h":{"count":2,"amount_cents":50000,"as_of":"2026-06-20T17:03:06.874Z"}`,
+		`"initiated_outgoing_pix_24h":{"count":2,"amount_cents":50000,"as_of":"2026-06-20T16:00:00Z"}`)
 	return replaceLine(t, dataset, 13, `"label_as_of":"2026-10-01T03:00:00Z"`, `"label_as_of":"2026-07-01T00:00:00Z"`)
 }
 
@@ -510,8 +510,8 @@ func TestEvaluateRecordsIdentities(t *testing.T) {
 		ArtifactVersion:       "pix-risk-model-v2",
 		ArtifactSHA256:        digest(model),
 		Software:              software,
-		Contracts:             Contracts{ScoringInput: "pix-payer-input-v2", TrainingExample: "pix-training-example-v2"},
-		FeatureSchema:         "pix-risk-v2",
+		Contracts:             Contracts{ScoringInput: "pix-payer-input-v3", TrainingExample: "pix-training-example-v3"},
+		FeatureSchema:         "pix-risk-v3",
 		ConfigVersion:         "pix-training-config-v2",
 		ConfigSHA256:          configSHA256,
 		TrainingReportVersion: "pix-training-report-v2",
@@ -695,7 +695,7 @@ func TestEvaluateStopsOnInvalidDatasets(t *testing.T) {
 	model, _ := trainModel(t, read(t, fixture), baselineConfig(t))
 
 	// The fixture with every record relabeled as the retired version 1.
-	retired := bytes.ReplaceAll(read(t, fixture), []byte(`"pix-training-example-v2"`), []byte(`"pix-training-example-v1"`))
+	retired := bytes.ReplaceAll(read(t, fixture), []byte(`"pix-training-example-v3"`), []byte(`"pix-training-example-v1"`))
 
 	cases := []struct {
 		name      string
@@ -703,7 +703,7 @@ func TestEvaluateStopsOnInvalidDatasets(t *testing.T) {
 		wantLines []int
 		wantCode  string
 	}{
-		{"invalid records", read(t, "../docs/contracts/training-examples-v2/dataset.jsonl"), []int{7, 8}, "invalid_enum_value"},
+		{"invalid records", read(t, "../docs/contracts/training-examples-v3/dataset.jsonl"), []int{7, 8}, "invalid_enum_value"},
 		{"version 1 records", retired, []int{1, 8}, "unsupported_training_example_version"},
 	}
 

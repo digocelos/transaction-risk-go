@@ -5,8 +5,8 @@ import (
 	"testing"
 )
 
-// The committed scenario datasets convert with the built command and no
-// problem, and their summaries are the ones datasets/README.md documents.
+// The committed scenario dataset converts with the built command and no
+// problem, and its summary is the one datasets/README.md documents.
 func TestScenarioDataset(t *testing.T) {
 	bin, work := commands(t), t.TempDir()
 
@@ -14,8 +14,7 @@ func TestScenarioDataset(t *testing.T) {
 		rows, usable, insufficient, fraud, legitimate int
 	}
 	for file, want := range map[string]counts{
-		"pix-training-scenarios-v1.csv": {8000, 7960, 40, 478, 7482},
-		"pix-training-scenarios-v2.csv": {8757, 8715, 42, 785, 7930},
+		"pix-training-scenarios-v3.csv": {8757, 8715, 42, 785, 7930},
 	} {
 		t.Run(file, func(t *testing.T) {
 			summary := convertDataset(t, bin, work, file)

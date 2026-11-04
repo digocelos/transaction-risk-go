@@ -1,8 +1,8 @@
 // Package trainingcsv converts training data prepared in a spreadsheet,
-// in the CSV layout of docs/contracts/pix-training-csv-v1.md, into
-// pix-training-example-v2 JSON Lines records that train and evaluate read
+// in the CSV layout of docs/contracts/pix-training-csv-v2.md, into
+// pix-training-example-v3 JSON Lines records that train and evaluate read
 // (ADR 0021). Every record is validated with the strict
-// pix-training-example-v2 decoder, and problems are reported by row and
+// pix-training-example-v3 decoder, and problems are reported by row and
 // column.
 package trainingcsv
 
@@ -81,7 +81,7 @@ func statistics() []node {
 	}
 }
 
-// record is the layout of a pix-training-example-v2 record, in the order
+// record is the layout of a pix-training-example-v3 record, in the order
 // of the contract. training_example_version and contract_version are
 // implied by the layout and have no column.
 var record = node{kind: object, children: []node{
@@ -100,7 +100,9 @@ var record = node{kind: object, children: []node{
 				observed("settled_outgoing_pix_90d",
 					leaf("count", integer, countDesc, emptyInvalid),
 					leaf("median_amount_cents", integer, centsDesc, "Required when count is above 0; empty when count is 0.")),
-				observed("initiated_outgoing_pix_24h", leaf("count", integer, countDesc, emptyInvalid)),
+				observed("initiated_outgoing_pix_24h",
+					leaf("count", integer, countDesc, emptyInvalid),
+					leaf("amount_cents", integer, centsDesc+" The sum of the amounts counted; 0 when count is 0.", emptyInvalid)),
 				withCondition(observed("period_limit",
 					leaf("limit_cents", integer, centsDesc+" 0 is a zero limit.", emptyInvalid),
 					leaf("consumed_cents", integer, centsDesc, emptyInvalid)),

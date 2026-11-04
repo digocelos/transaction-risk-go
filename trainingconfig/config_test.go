@@ -100,7 +100,7 @@ func TestDecodeReadsEveryMember(t *testing.T) {
 	want := Config{
 		Version:        "pix-training-config-v2",
 		Initialization: "uniform-0.5",
-		FeatureSchema:  "pix-risk-v2",
+		FeatureSchema:  "pix-risk-v3",
 		HiddenLayers:   []int{4},
 		Activation:     "sigmoid",
 		Algorithm:      "full-batch-gradient-descent",
@@ -126,8 +126,8 @@ func TestDecodeReadsEveryMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := layers.Sizes(); !reflect.DeepEqual(got, []int{62, 16, 8, 1}) {
-		t.Errorf("Sizes() = %v, want [62 16 8 1]", got)
+	if got := layers.Sizes(); !reflect.DeepEqual(got, []int{65, 16, 8, 1}) {
+		t.Errorf("Sizes() = %v, want [65 16 8 1]", got)
 	}
 
 	fixed, err := Decode(readFile(t, filepath.Join(examplesDir, "01-baseline.json")))
@@ -144,8 +144,8 @@ func TestDecodeReadsEveryMember(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := noHidden.Sizes(); !reflect.DeepEqual(got, []int{62, 1}) {
-		t.Errorf("Sizes() without hidden layers = %v, want [62 1]", got)
+	if got := noHidden.Sizes(); !reflect.DeepEqual(got, []int{65, 1}) {
+		t.Errorf("Sizes() without hidden layers = %v, want [65 1]", got)
 	}
 }
 
@@ -373,7 +373,7 @@ func TestCanonicalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantCanonical = `{"config_version":"pix-training-config-v2","feature_schema":"pix-risk-v2",` +
+	const wantCanonical = `{"config_version":"pix-training-config-v2","feature_schema":"pix-risk-v3",` +
 		`"architecture":{"hidden_layers":[4],"activation":"sigmoid"},"algorithm":"full-batch-gradient-descent",` +
 		`"loss":"mean-squared-error","seed":42,"learning_rate":1,"max_epochs":5000,` +
 		`"boundaries":{"train_end":"2026-06-05T00:00:00Z","validation_end":"2026-06-12T00:00:00Z"},` +

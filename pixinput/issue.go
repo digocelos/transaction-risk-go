@@ -6,7 +6,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/internal/strictjson"
 )
 
-// Validation codes. The catalog is closed; see the pix-payer-input-v2
+// Validation codes. The catalog is closed; see the pix-payer-input-v3
 // specification for the condition behind each code.
 const (
 	CodeDocumentTooLarge           = "document_too_large"
@@ -27,6 +27,7 @@ const (
 	CodeInvalidEnumValue           = strictjson.CodeInvalidEnumValue
 	CodeAsOfAfterDecisionTime      = "as_of_after_decision_time"
 	CodeMedianCountMismatch        = "median_count_mismatch"
+	CodeAmountCountMismatch        = "amount_count_mismatch"
 	CodeDateAfterAsOf              = "date_after_as_of"
 	CodeKeyOwnershipAfterCreation  = "key_ownership_after_creation"
 )

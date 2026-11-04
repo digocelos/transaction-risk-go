@@ -23,9 +23,9 @@ import (
 var update = flag.Bool("update", false, "rewrite the template and the column table of its guide")
 
 const (
-	templatePath  = "../templates/training-data/pix-training-example-v2.csv"
+	templatePath  = "../templates/training-data/pix-training-example-v3.csv"
 	guidePath     = "../templates/training-data/README.md"
-	examplesDir   = "../docs/contracts/training-examples-v2"
+	examplesDir   = "../docs/contracts/training-examples-v3"
 	baselineCheck = "../docs/contracts/training-config-examples/01-baseline.json"
 )
 
@@ -144,7 +144,7 @@ func validExamples(t *testing.T) []byte {
 	t.Helper()
 
 	var out bytes.Buffer
-	_, err := trainingdata.Scan(bytes.NewReader(read(t, filepath.Join(examplesDir, "dataset.jsonl"))), trainingdata.PixRiskV2,
+	_, err := trainingdata.Scan(bytes.NewReader(read(t, filepath.Join(examplesDir, "dataset.jsonl"))), trainingdata.PixRiskV3,
 		trainingdata.DefaultMaxRecords, func(r trainingdata.Record) error {
 			if r.Category != trainingdata.Invalid {
 				line := bytes.Split(read(t, filepath.Join(examplesDir, "dataset.jsonl")), []byte("\n"))[r.Line-1]
@@ -230,7 +230,7 @@ func TestConvertSummarizesWhatTrainReads(t *testing.T) {
 		t.Error("the conversion of a compact dataset is not byte for byte the same")
 	}
 
-	scanned, err := trainingdata.Scan(bytes.NewReader(converted), trainingdata.PixRiskV2, trainingdata.DefaultMaxRecords,
+	scanned, err := trainingdata.Scan(bytes.NewReader(converted), trainingdata.PixRiskV3, trainingdata.DefaultMaxRecords,
 		func(trainingdata.Record) error { return nil })
 	if err != nil {
 		t.Fatal(err)

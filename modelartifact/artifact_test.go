@@ -104,7 +104,7 @@ func scoringInputs(t *testing.T) []pixinput.ScoringInput {
 		if err := json.Unmarshal(scanner.Bytes(), &record); err != nil {
 			t.Fatal(err)
 		}
-		input, err := pixinput.Decode(record.ScoringInput, pixinput.ContractV2)
+		input, err := pixinput.Decode(record.ScoringInput, pixinput.ContractV3)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -185,15 +185,15 @@ func TestArtifactRecordsItsIdentities(t *testing.T) {
 		t.Errorf("dataset_sha256 = %s", a.Training.DatasetSHA256)
 	case a.SelectedEpoch != 300 || a.Threshold != (Threshold{Policy: "fixed", Value: 0.5}):
 		t.Errorf("selection = %d %+v", a.SelectedEpoch, a.Threshold)
-	case !reflect.DeepEqual(a.Sizes, []int{62, 4, 1}):
+	case !reflect.DeepEqual(a.Sizes, []int{65, 4, 1}):
 		t.Errorf("sizes = %v", a.Sizes)
 	}
 
 	for _, want := range []string{
 		`"artifact_version": "pix-risk-model-v2"`,
-		`"scoring_input": "pix-payer-input-v2"`,
-		`"training_example": "pix-training-example-v2"`,
-		`"feature_schema": "pix-risk-v2"`,
+		`"scoring_input": "pix-payer-input-v3"`,
+		`"training_example": "pix-training-example-v3"`,
+		`"feature_schema": "pix-risk-v3"`,
 		`"config_version": "pix-training-config-v2"`,
 		`"report_version": "pix-training-report-v2"`,
 		`"revision": "0123abc"`,
@@ -263,7 +263,7 @@ func TestDecodeRejectsTamperedOrInvalidArtifacts(t *testing.T) {
 			descriptor[0], descriptor[1] = descriptor[1], descriptor[0]
 		}),
 		"other sizes": tamper(t, data, func(v map[string]any) {
-			object(v, "network")["sizes"] = []any{62, 5, 1}
+			object(v, "network")["sizes"] = []any{65, 5, 1}
 		}),
 		"unsupported version": tamper(t, data, func(v map[string]any) {
 			v["artifact_version"] = "pix-risk-model-v1"
