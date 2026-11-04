@@ -352,7 +352,7 @@ func (c *converter) mustBeEmpty(n node, path []string, code, message string) {
 // check validates one record with the pix-training-example-v2 decoder and
 // counts it by category.
 func (c *converter) check(line int, data []byte, summary *Summary) {
-	_, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV1, 1, func(r trainingdata.Record) error {
+	_, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV2, 1, func(r trainingdata.Record) error {
 		summary.Records.Total++
 		switch r.Category {
 		case trainingdata.Usable:

@@ -1,6 +1,6 @@
 # Feature schema `pix-risk-v1`
 
-**Status:** Specification, implemented by the `pixrisk` package and used by `cmd/train`, `cmd/evaluate`, `cmd/predict`, and the `scoring` package. The version 1 contracts this document describes changes from were removed with the educational workflow (ADR 0020); they remain in the repository history: [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) and [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md).
+**Status:** Superseded by [`pix-risk-v2`](pix-risk-v2.md), which the `pixrisk` package implements; the toolkit no longer accepts `pix-risk-v1` artifacts or configurations (ADR 0023). This document remains the specification of version 1. The version 1 contracts this document describes changes from were removed with the educational workflow (ADR 0020); they remain in the repository history: [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) and [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md).
 
 ## 1. Scope
 

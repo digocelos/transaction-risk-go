@@ -141,9 +141,9 @@ func TestScoreSpecificationExamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantModel := scoring.Model{
-		ArtifactVersion: "pix-risk-model-v1",
+		ArtifactVersion: "pix-risk-model-v2",
 		ArtifactSHA256:  digest(model),
-		FeatureSchema:   "pix-risk-v1",
+		FeatureSchema:   "pix-risk-v2",
 		Threshold:       artifact.Threshold,
 	}
 
@@ -299,7 +299,7 @@ func TestScoreRejectsOtherDocuments(t *testing.T) {
 // A malformed, tampered, or foreign artifact is refused when it is loaded.
 func TestNewRejectsInvalidArtifacts(t *testing.T) {
 	model, _ := trainArtifact(t)
-	version := bytes.Replace(model, []byte(`"pix-risk-model-v1"`), []byte(`"pix-risk-model-v2"`), 1)
+	version := bytes.Replace(model, []byte(`"pix-risk-model-v2"`), []byte(`"pix-risk-model-v1"`), 1)
 	if bytes.Equal(version, model) {
 		t.Fatal("the artifact does not record its version")
 	}
@@ -471,5 +471,84 @@ func TestScoringDependsOnNoTrainingOrNetworkPackage(t *testing.T) {
 		if forbidden[dependency] {
 			t.Errorf("scoring depends on %s", dependency)
 		}
+	}
+}
+
+// Model notes report what the artifact's preparation state did to an
+// input: the standardized features it clipped to the train range, and the
+// features the input activates that no train record exercised. They
+// depend on the model, never on the input alone, and the preparation notes
+// stay as the specification examples expect them.
+func TestScoreReportsModelNotes(t *testing.T) {
+	model, result := trainArtifact(t)
+	scorer := newScorer(t, model)
+
+	unexercised := map[string]bool{}
+	for _, name := range result.UnexercisedFeatures {
+		unexercised[name] = true
+	}
+	if !unexercised["no_pix_key"] || !unexercised["limit_zero"] || !unexercised["key_type_other"] || unexercised["amount"] {
+		t.Fatalf("the fixture's unexercised features changed: %v", result.UnexercisedFeatures)
+	}
+
+	cases := map[string][]pixrisk.ModelNote{
+		// The complete example's recipient account and key are older than
+		// any in the fixture.
+		"01-complete.json": {
+			{Feature: "recipient_account_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_link_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_ownership_age", Status: pixrisk.StatusClipped},
+		},
+		// Without a key, nothing is clipped, and the discriminator no train
+		// record had is activated.
+		"04-no-pix-key.json": {{Feature: "no_pix_key", Status: pixrisk.StatusUnexercised}},
+		"07-zero-limit.json": {
+			{Feature: "limit_zero", Status: pixrisk.StatusUnexercised},
+			{Feature: "recipient_account_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_link_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_ownership_age", Status: pixrisk.StatusClipped},
+		},
+		"11-unrecognized-key-type.json": {
+			{Feature: "recipient_account_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_link_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_ownership_age", Status: pixrisk.StatusClipped},
+			{Feature: "key_type_other", Status: pixrisk.StatusUnexercised},
+		},
+	}
+
+	for name, want := range cases {
+		got := score(t, scorer, read(t, filepath.Join(examplesDir, name)))
+		if got.Status != scoring.StatusScored {
+			t.Fatalf("%s: status %s", name, got.Status)
+		}
+		if !reflect.DeepEqual(got.ModelNotes, want) {
+			t.Errorf("%s: ModelNotes = %+v, want %+v", name, got.ModelNotes, want)
+		}
+
+		var expected expectation
+		if err := json.Unmarshal(read(t, filepath.Join(examplesDir, strings.TrimSuffix(name, ".json")+".expected.json")), &expected); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(got.Notes, expected.Notes) {
+			t.Errorf("%s: the model notes changed the preparation notes: %+v", name, got.Notes)
+		}
+	}
+
+	// A clipped input scores as the edge of the train range: the complete
+	// example with an even older recipient account gets the same score.
+	complete := read(t, filepath.Join(examplesDir, "01-complete.json"))
+	older := bytes.Replace(complete, []byte(`"opening_date": "2019-05-14T03:00:00Z"`), []byte(`"opening_date": "2009-05-14T03:00:00Z"`), 1)
+	if bytes.Equal(older, complete) {
+		t.Fatal("the complete example's opening date changed")
+	}
+	if a, b := score(t, scorer, complete), score(t, scorer, older); *a.Score != *b.Score {
+		t.Errorf("an input beyond the train range scores %v, the edge scores %v", *b.Score, *a.Score)
+	}
+
+	// Results do not share the notes.
+	first := score(t, scorer, read(t, filepath.Join(examplesDir, "04-no-pix-key.json")))
+	first.ModelNotes[0].Feature = "changed"
+	if second := score(t, scorer, read(t, filepath.Join(examplesDir, "04-no-pix-key.json"))); second.ModelNotes[0].Feature != "no_pix_key" {
+		t.Error("results share their model notes")
 	}
 }

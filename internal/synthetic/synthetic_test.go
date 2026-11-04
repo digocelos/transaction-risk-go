@@ -40,7 +40,7 @@ func scan(t *testing.T, data []byte) scanned {
 	result := scanned{blockers: map[string]int{}, ordered: true}
 	var previous time.Time
 
-	summary, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV1, trainingdata.DefaultMaxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(bytes.NewReader(data), trainingdata.PixRiskV2, trainingdata.DefaultMaxRecords, func(record trainingdata.Record) error {
 		if record.Category == trainingdata.Invalid {
 			return errors.New(record.Diagnostics[0].Path + ": " + record.Diagnostics[0].Code + ": " + record.Diagnostics[0].Message)
 		}

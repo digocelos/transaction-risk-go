@@ -154,7 +154,7 @@ func scan(ctx context.Context, dataset io.Reader, artifact modelartifact.Artifac
 	var exclusions []trainingdata.Exclusion
 	var diagnostics []trainingdata.Diagnostic
 
-	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(dataset, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err
@@ -278,7 +278,7 @@ func trainKey(record trainingdata.Record, trainEnd time.Time) (string, bool) {
 func referenceKeys(ctx context.Context, reference io.Reader, trained modelartifact.Training, maxRecords int) (map[string]bool, error) {
 	keys := map[string]bool{}
 
-	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV1, maxRecords, func(record trainingdata.Record) error {
+	summary, err := trainingdata.Scan(reference, trainingdata.PixRiskV2, maxRecords, func(record trainingdata.Record) error {
 		if record.Line%cancellationInterval == 0 {
 			if err := ctx.Err(); err != nil {
 				return err

@@ -100,7 +100,7 @@ func TestDecodeReadsEveryMember(t *testing.T) {
 	want := Config{
 		Version:        "pix-training-config-v2",
 		Initialization: "uniform-0.5",
-		FeatureSchema:  "pix-risk-v1",
+		FeatureSchema:  "pix-risk-v2",
 		HiddenLayers:   []int{4},
 		Activation:     "sigmoid",
 		Algorithm:      "full-batch-gradient-descent",
@@ -373,7 +373,7 @@ func TestCanonicalIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantCanonical = `{"config_version":"pix-training-config-v2","feature_schema":"pix-risk-v1",` +
+	const wantCanonical = `{"config_version":"pix-training-config-v2","feature_schema":"pix-risk-v2",` +
 		`"architecture":{"hidden_layers":[4],"activation":"sigmoid"},"algorithm":"full-batch-gradient-descent",` +
 		`"loss":"mean-squared-error","seed":42,"learning_rate":1,"max_epochs":5000,` +
 		`"boundaries":{"train_end":"2026-06-05T00:00:00Z","validation_end":"2026-06-12T00:00:00Z"},` +

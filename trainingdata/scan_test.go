@@ -45,7 +45,7 @@ func scanAll(t *testing.T, r io.Reader) ([]Record, Summary) {
 
 	var records []Record
 
-	summary, err := Scan(r, PixRiskV1, DefaultMaxRecords, func(record Record) error {
+	summary, err := Scan(r, PixRiskV2, DefaultMaxRecords, func(record Record) error {
 		records = append(records, record)
 		return nil
 	})
@@ -353,7 +353,7 @@ func TestScanUsesBoundedMemory(t *testing.T) {
 	baseline := heapInUse()
 	var peak uint64
 
-	summary, err := Scan(&repeatReader{line: line, count: records}, PixRiskV1, DefaultMaxRecords, func(record Record) error {
+	summary, err := Scan(&repeatReader{line: line, count: records}, PixRiskV2, DefaultMaxRecords, func(record Record) error {
 		if record.Line%5000 == 0 {
 			peak = max(peak, heapInUse())
 		}
@@ -399,7 +399,7 @@ func TestScanStopsOnErrors(t *testing.T) {
 	base := baseRecord(t)
 
 	visits := 0
-	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), PixRiskV1, DefaultMaxRecords, func(Record) error {
+	_, err := Scan(strings.NewReader(base+"\n"+base+"\n"), PixRiskV2, DefaultMaxRecords, func(Record) error {
 		visits++
 		return errVisit
 	})
@@ -409,7 +409,7 @@ func TestScanStopsOnErrors(t *testing.T) {
 
 	errDisk := errors.New("disk failure")
 	_, err = Scan(io.MultiReader(strings.NewReader(base+"\n"), iotest.ErrReader(errDisk)),
-		PixRiskV1, DefaultMaxRecords, func(Record) error { return nil })
+		PixRiskV2, DefaultMaxRecords, func(Record) error { return nil })
 	if !errors.Is(err, errDisk) {
 		t.Errorf("reader error: err = %v, want it to wrap %v", err, errDisk)
 	}
@@ -422,7 +422,7 @@ func TestScanStopsAtTheRecordLimit(t *testing.T) {
 	line := []byte(baseRecord(t) + "\n")
 
 	visits := 0
-	summary, err := Scan(&repeatReader{line: line, count: 1 << 30}, PixRiskV1, 25, func(Record) error {
+	summary, err := Scan(&repeatReader{line: line, count: 1 << 30}, PixRiskV2, 25, func(Record) error {
 		visits++
 		return nil
 	})
@@ -439,13 +439,13 @@ func TestScanStopsAtTheRecordLimit(t *testing.T) {
 	}
 
 	// A dataset with exactly the limit is read completely.
-	summary, err = Scan(&repeatReader{line: line, count: 25}, PixRiskV1, 25, func(Record) error { return nil })
+	summary, err = Scan(&repeatReader{line: line, count: 25}, PixRiskV2, 25, func(Record) error { return nil })
 	if err != nil || summary.Records.Total != 25 || summary.DatasetSHA256 == "" {
 		t.Errorf("at the limit: summary %+v, error %v", summary.Records, err)
 	}
 
 	for _, invalid := range []int{0, -1} {
-		if _, err := Scan(strings.NewReader(""), PixRiskV1, invalid, func(Record) error { return nil }); err == nil {
+		if _, err := Scan(strings.NewReader(""), PixRiskV2, invalid, func(Record) error { return nil }); err == nil {
 			t.Errorf("limit %d: Scan() error = nil", invalid)
 		}
 	}

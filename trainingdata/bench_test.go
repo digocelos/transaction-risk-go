@@ -19,7 +19,7 @@ func BenchmarkScan(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		summary, err := trainingdata.Scan(bytes.NewReader(data.Bytes()), trainingdata.PixRiskV1,
+		summary, err := trainingdata.Scan(bytes.NewReader(data.Bytes()), trainingdata.PixRiskV2,
 			trainingdata.DefaultMaxRecords, func(trainingdata.Record) error { return nil })
 		if err != nil || summary.Records.Total != 10_000 {
 			b.Fatalf("Scan() = %+v, %v", summary.Records, err)

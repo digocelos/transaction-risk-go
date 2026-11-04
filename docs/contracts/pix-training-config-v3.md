@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-This specification defines the configuration of a training run: a JSON document that fixes the feature schema, the network architecture, its initialization, the algorithm, the loss, the regularization, the seed, the learning rate, the number of epochs, the temporal boundaries, and the selection policies before any dataset is read or any artifact is written. `cmd/train` reads it with `-config` (ADR 0014). The training report records it and its identity ([`pix-training-report-v2`](pix-training-report-v2.md)), and the model artifact records its version ([`pix-risk-model-v1`](pix-risk-model-v1.md)).
+This specification defines the configuration of a training run: a JSON document that fixes the feature schema, the network architecture, its initialization, the algorithm, the loss, the regularization, the seed, the learning rate, the number of epochs, the temporal boundaries, and the selection policies before any dataset is read or any artifact is written. `cmd/train` reads it with `-config` (ADR 0014). The training report records it and its identity ([`pix-training-report-v2`](pix-training-report-v2.md)), and the model artifact records its version ([`pix-risk-model-v2`](pix-risk-model-v2.md)).
 
 The dataset and the output files are not part of the configuration: they are the command's other flags, so one configuration can train on several datasets.
 
@@ -23,7 +23,7 @@ Every member is required and none is nullable. The members of version 2 keep the
 | Member | Type | Rules |
 |---|---|---|
 | `config_version` | string | `pix-training-config-v3`. `pix-training-config-v2` is accepted by its own contract; any other value is rejected with `unsupported_config_version`. |
-| `feature_schema` | closed enumeration | `pix-risk-v1`. The network's input size is the feature count of this schema, 62. |
+| `feature_schema` | closed enumeration | The feature schema the toolkit implements, `pix-risk-v2`; `pix-risk-v1`, which the toolkit no longer implements, is rejected (ADR 0023). The network's input size is the feature count of this schema, 62. |
 | `architecture` | object | See [3.1](#31-architecture). |
 | `initialization` | object | See [3.2](#32-initialization). |
 | `algorithm` | closed enumeration | `full-batch-gradient-descent`: every epoch is one gradient descent step over all usable train records, in dataset line order. |
@@ -67,7 +67,7 @@ The loss is the training objective and the `validation_loss` objective of [3.5](
 | Member | Type | Rules |
 |---|---|---|
 | `l2` | number | 0 to 1. The weight decay coefficient λ: every weight, not bias, also receives the gradient of (λ/2)·weight², so one update is weight − learning_rate·(gradient + λ·weight). The reported losses exclude the decay term. 0 is no decay, as version 2. Decay shrinks weights that carry little signal and divides the credit between collinear inputs, such as the DICT statistics of the recipient person and of the key, instead of letting one of them take it all. |
-| `availability_dropout` | number | 0 to 1. In every epoch, for each usable train record in dataset line order and each optional source of `pix-risk-v1` in the order of [`pix-training-report-v2` §4](pix-training-report-v2.md#4-coverage), one draw from a generator seeded with `seed` decides, with this probability, whether the source's features are set to 0 in that record for that epoch, exactly as the preparation represents an unavailable source ([`pix-risk-v1` §11](../features/pix-risk-v1.md#11-fitted-standardization)): the values and the availability indicators of the source. The generator is separate from the one that draws the initial weights, so the masks of a run depend only on `seed`, the probability, and the order of records and sources. Validation and test records are never masked, and the training loss `cmd/train` prints is measured on the masked records. 0 is no dropout, as version 2. |
+| `availability_dropout` | number | 0 to 1. In every epoch, for each usable train record in dataset line order and each optional source of `pix-risk-v2` in the order of [`pix-training-report-v2` §4](pix-training-report-v2.md#4-coverage), one draw from a generator seeded with `seed` decides, with this probability, whether the source's features are set to 0 in that record for that epoch, exactly as the preparation represents an unavailable source ([`pix-risk-v2` §11](../features/pix-risk-v2.md#11-fitted-standardization)): the values and the availability indicators of the source. The generator is separate from the one that draws the initial weights, so the masks of a run depend only on `seed`, the probability, and the order of records and sources. Validation and test records are never masked, and the training loss `cmd/train` prints is measured on the masked records. 0 is no dropout, as version 2. |
 
 Availability dropout trains the network on records whose optional sources are missing at a rate the dataset may never show, so the availability indicators receive gradient and the response to an unavailable source is learned rather than left at the initialization. It is the only option that changes what the network sees; it does not change the dataset, the preparation state, or any report of the data.
 

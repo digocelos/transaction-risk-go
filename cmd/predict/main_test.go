@@ -176,9 +176,9 @@ func TestPredictSpecificationExamples(t *testing.T) {
 	}
 
 	wantModel := map[string]any{
-		"artifact_version": "pix-risk-model-v1",
+		"artifact_version": "pix-risk-model-v2",
 		"artifact_sha256":  digest(read(t, model)),
-		"feature_schema":   "pix-risk-v1",
+		"feature_schema":   "pix-risk-v2",
 		"threshold":        map[string]any{"policy": artifact.Threshold.Policy, "value": artifact.Threshold.Value},
 	}
 
@@ -212,8 +212,11 @@ func TestPredictSpecificationExamples(t *testing.T) {
 				if !reflect.DeepEqual(got["notes"], expected["notes"]) {
 					t.Errorf("notes = %v, want %v", got["notes"], expected["notes"])
 				}
-				if want := []string{"status", "contract_version", "model", "score", "notes"}; !reflect.DeepEqual(names, want) {
+				if want := []string{"status", "contract_version", "model", "score", "notes", "model_notes"}; !reflect.DeepEqual(names, want) {
 					t.Errorf("members = %v, want %v", names, want)
+				}
+				if !reflect.DeepEqual(got["model_notes"], asJSON(t, want.ModelNotes)) {
+					t.Errorf("model_notes = %v, want the scoring API's %v", got["model_notes"], want.ModelNotes)
 				}
 			case "insufficient_input":
 				if r.code != exitInsufficientInput || got["status"] != "insufficient_input" ||

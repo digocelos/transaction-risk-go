@@ -29,11 +29,11 @@ There is one column for each value of a `pix-training-example-v2` record, named 
 
 **Subjects that do not apply.** A conditional subject is omitted when its discriminator says it does not apply: `observations.payer_device` with `pix_payment.payer_device_usage` `no_payer_device`, `observations.recipient_pix_key` with `pix_payment.recipient_key_usage` `no_pix_key`, and `observations.payer_account.period_limit` with `pix_payment.payer_limit_period` `no_period_limit`. Every cell of an omitted subject must be empty; a value there is `member_not_allowed`.
 
-**Counters.** A DICT counter whose `d90`, `m12`, and `m60` cells are all empty is `null` as a whole; otherwise, each empty cell is a `null` window. `pix-risk-v1` treats both the same way.
+**Counters.** A DICT counter whose `d90`, `m12`, and `m60` cells are all empty is `null` as a whole; otherwise, each empty cell is a `null` window. `pix-risk-v2` treats both the same way.
 
 ## 5. Conversion
 
-Every record is validated with the strict `pix-training-example-v2` decoder and classified with `pix-risk-v1`, as `train` would. The dataset is written only when every row is valid. Insufficient and immature records are valid and are written; `train` excludes them.
+Every record is validated with the strict `pix-training-example-v2` decoder and classified with `pix-risk-v2`, as `train` would. The dataset is written only when every row is valid. Insufficient and immature records are valid and are written; `train` excludes them.
 
 Each problem names the row, counting the header as row 1 and using the line where the row starts, the column, a code, and a message. The codes are those of the contracts, plus `invalid_csv`, `unknown_column`, `duplicate_column`, `missing_column`, `value_without_as_of`, and `member_not_allowed` for the layout itself. At most 1,000 problems are reported. More rows than the record limit, 1,000,000 by default, stop the conversion.
 

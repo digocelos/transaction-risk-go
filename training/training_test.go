@@ -389,7 +389,8 @@ func TestRunStopsWhenCanceled(t *testing.T) {
 const crossArchitectureTolerance = 1e-9
 
 // Scores trained with the baseline configuration example, recorded on
-// arm64. CI runs this test on amd64.
+// arm64, with the validation and test records clipped to the train range
+// as pix-risk-v2 requires. CI runs this test on amd64.
 func TestRunMatchesReferenceScoresAcrossArchitectures(t *testing.T) {
 	cfg, err := trainingconfig.Decode(read(t, "../docs/contracts/training-config-examples/01-baseline.json"))
 	if err != nil {
@@ -401,7 +402,7 @@ func TestRunMatchesReferenceScoresAcrossArchitectures(t *testing.T) {
 		0.0060844999361150337, // line 2
 		0.0064366893694704549, // line 4
 		0.98956233721487585,   // line 5
-		0.99093897463876834,   // line 6
+		0.98898943206174406,   // line 6
 		0.97385018870668616,   // line 7
 	}
 

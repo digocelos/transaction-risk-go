@@ -1,15 +1,18 @@
-// Package pixrisk prepares the features of the feature schema pix-risk-v1
+// Package pixrisk prepares the features of the feature schema pix-risk-v2
 // from pix-payer-input-v2 scoring inputs, as specified in
-// docs/features/pix-risk-v1.md. Training, evaluation, and scoring share
+// docs/features/pix-risk-v2.md. Training, evaluation, and scoring share
 // this preparation: Prepare turns one input into values before
-// standardization, Fit learns the standardization from the train partition
-// only, and State.Apply produces the values a network receives.
+// standardization, Fit learns the standardization, the train range, and
+// the exercised features from the train partition only, and State.Apply
+// produces the values a network receives, clipped to the train range.
 package pixrisk
 
-// Schema is the feature schema this package prepares.
-const Schema = "pix-risk-v1"
+// Schema is the feature schema this package prepares. It replaces
+// pix-risk-v1, which had the same features without the train range and
+// the exercised flags in its state (ADR 0023).
+const Schema = "pix-risk-v2"
 
-// FeatureCount is the number of features of pix-risk-v1.
+// FeatureCount is the number of features of pix-risk-v2.
 const FeatureCount = 62
 
 // Kind tells how a feature is transformed.
@@ -93,7 +96,7 @@ var descriptor = func() []Feature {
 	return features
 }()
 
-// Descriptor returns the features of pix-risk-v1, in order.
+// Descriptor returns the features of pix-risk-v2, in order.
 func Descriptor() []Feature {
 	return append([]Feature(nil), descriptor...)
 }

@@ -274,6 +274,13 @@ A feature whose value is 0 in every usable train record, so its first-layer weig
 **Partial dependence**:
 The mean score, and the share of records above the threshold, when one feature is set to each value of a fixed grid in real units on every validation record, with every other feature as the record has it.
 
+**Train range**:
+The minimum and maximum of a standardized feature among the usable train records in which it is available, recorded in the preparation state; scoring clips every value to it before standardization, so a network never receives a value outside what its training data covered.
+
+**Model note**:
+A note scoring attaches to one feature of an input because of the model's preparation state, not the input alone: clipped, when the value was outside the train range, or unexercised, when the feature was 0 in every usable train record; reported in model_notes, separately from the preparation notes.
+_Avoid_: Note (for the preparation notes)
+
 **Expected direction**:
 The direction in which a Pix fraud model is expected to move its score as a feature grows, declared by the feature schema as risk-increasing, risk-decreasing, or none; an inspection reports where a model moves against it.
 _Avoid_: Monotonicity constraint (nothing is enforced)

@@ -1,6 +1,6 @@
 # Training contract `pix-training-example-v2`
 
-**Status:** Normative for `pix-training-example-v2`. It replaces [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history: the record, classification, evaluation protocol, fingerprint, and dataset report are unchanged, and records embed `pix-payer-input-v2` scoring inputs prepared for `pix-risk-v1`.
+**Status:** Normative for `pix-training-example-v2`. It replaces [`pix-training-example-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-training-example-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history: the record, classification, evaluation protocol, fingerprint, and dataset report are unchanged, and records embed `pix-payer-input-v2` scoring inputs prepared for `pix-risk-v2`.
 
 ## 1. Scope
 
@@ -20,7 +20,7 @@ The key words MUST, MUST NOT, SHOULD, and MAY are to be interpreted as described
 ## 2. Normative references
 
 - [`pix-payer-input-v2`](pix-payer-input-v2.md), the scoring input contract, including its value types (§5), nullability rules (§6), validation (§11), and code catalog (§12).
-- [`pix-risk-v1`](../features/pix-risk-v1.md), the feature schema whose preparation decides insufficiency.
+- [`pix-risk-v2`](../features/pix-risk-v2.md), the feature schema whose preparation decides insufficiency.
 - RFC 8259: The JavaScript Object Notation (JSON) Data Interchange Format.
 - RFC 3339: Date and Time on the Internet: Timestamps.
 - RFC 6901: JavaScript Object Notation (JSON) Pointer.
@@ -96,7 +96,7 @@ An example record, shown on several lines for readability; in a dataset it occup
 - It is validated by `pix-payer-input-v2` exactly, using the exact bytes of the member's value as they appear in the record. Its 65,536-byte limit applies to those bytes.
 - It MUST be the input as it existed at decision time. It MUST NOT be rebuilt, enriched, or corrected later with information that became available after `decision_time`, such as backfilled observations or later DICT statistics.
 - Its issues are reported with the scoring input contract's codes, and with paths prefixed by `/scoring_input`. For example, `/pix_payment/amount_cents` becomes `/scoring_input/pix_payment/amount_cents`, and a whole-document issue at `""` becomes `/scoring_input`.
-- Its preparation follows the feature schema being trained, [`pix-risk-v1`](../features/pix-risk-v1.md). Blocker paths are prefixed by `/scoring_input` in the same way.
+- Its preparation follows the feature schema being trained, [`pix-risk-v2`](../features/pix-risk-v2.md). Blocker paths are prefixed by `/scoring_input` in the same way.
 
 ## 7. Outcome
 
@@ -141,7 +141,7 @@ Every record belongs to exactly one category. The categories are checked in this
 | Category | When | Used for training and evaluation |
 |---|---|---|
 | `invalid` | The record breaks this contract or the embedded scoring input contract ([section 10](#10-validation)). | No |
-| `insufficient` | The record is valid, but preparation for the feature schema being trained returns `insufficient_input`: for `pix-risk-v1`, a required fact is missing or stale. | No |
+| `insufficient` | The record is valid, but preparation for the feature schema being trained returns `insufficient_input`: for `pix-risk-v2`, a required fact is missing or stale. | No |
 | `immature` | The record is valid and sufficient, but its label is not mature ([9.2](#92-label-maturity)). | No |
 | `usable` | None of the above. | Yes |
 
@@ -311,7 +311,7 @@ Validation and classification of a dataset produce a dataset report: a JSON obje
 |---|---|---|
 | `dataset_report_version` | string | `pix-training-dataset-report-v1`. |
 | `training_example_version` | string | `pix-training-example-v2`. |
-| `feature_schema` | string | The feature schema used to decide insufficiency, such as `pix-risk-v1`. |
+| `feature_schema` | string | The feature schema used to decide insufficiency, such as `pix-risk-v2`. |
 | `label_maturity_days` | integer | `90`. |
 | `dataset_sha256` | string | The fingerprint. |
 | `dataset_bytes` | integer | The size of the dataset in bytes. |
@@ -330,7 +330,7 @@ An evaluation report built on this dataset report MUST also record the partition
 
 ## 14. Examples
 
-Every example in [`training-examples-v2/`](training-examples-v2/) is a complete dataset, paired with a `.expected.json` file holding its expected dataset report for `pix-risk-v1`. All examples use `label_as_of` `2026-10-01T03:00:00Z` and embed scoring inputs derived from [`pix-payer-input-v2` example 01](examples-v2/01-complete.json), moved to their decision dates. The expected reports were computed by an implementation independent of the toolkit.
+Every example in [`training-examples-v2/`](training-examples-v2/) is a complete dataset, paired with a `.expected.json` file holding its expected dataset report for `pix-risk-v2`. All examples use `label_as_of` `2026-10-01T03:00:00Z` and embed scoring inputs derived from [`pix-payer-input-v2` example 01](examples-v2/01-complete.json), moved to their decision dates. The expected reports were computed by an implementation independent of the toolkit.
 
 | File | Case | Category |
 |---|---|---|

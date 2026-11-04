@@ -33,7 +33,7 @@ const (
 	selectionFixture = "../training/testdata/pix-risk-v1-selection.jsonl"
 	invalidDataset   = "../docs/contracts/training-examples-v2/dataset.jsonl"
 	baseline         = "../docs/contracts/training-config-examples/01-baseline.json"
-	specification    = "../docs/features/pix-risk-v1.md"
+	specification    = "../docs/features/pix-risk-v2.md"
 )
 
 var software = modelartifact.Software{Module: "github.com/digocelos/transaction-risk-go", Version: "(devel)", Revision: "0123abc"}
@@ -341,7 +341,7 @@ func TestInspectRejectsOtherInputs(t *testing.T) {
 		t.Errorf("invalid dataset: error = %v", err)
 	}
 
-	damaged := bytes.Replace(model, []byte(`"artifact_version": "pix-risk-model-v1"`), []byte(`"artifact_version": "pix-risk-model-v0"`), 1)
+	damaged := bytes.Replace(model, []byte(`"artifact_version": "pix-risk-model-v2"`), []byte(`"artifact_version": "pix-risk-model-v0"`), 1)
 	if _, err := Inspect(context.Background(), damaged, cfg, bytes.NewReader(dataset), Options{MaxRecords: trainingdata.DefaultMaxRecords}); err == nil || !strings.Contains(err.Error(), "unsupported model artifact version") {
 		t.Errorf("damaged artifact: error = %v", err)
 	}
@@ -502,7 +502,7 @@ func TestDirectionsAndScalesMatchTheSpecification(t *testing.T) {
 		}
 	}
 
-	// The transformations are the fixed ones of pix-risk-v1 §9.
+	// The transformations are the fixed ones of pix-risk-v2 §9.
 	if scaleOf("amount").transform(99) != math.Log1p(99) || scaleOf("amount_to_median_90d").transform(2.5) != math.Log(2.5) ||
 		scaleOf("limit_utilization").transform(0.5) != math.Log1p(0.5) {
 		t.Error("the transformations are not the fixed ones of the schema")

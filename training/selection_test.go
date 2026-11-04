@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/digocelos/transaction-risk-go/evaluation"
+	"github.com/digocelos/transaction-risk-go/nn"
 	"github.com/digocelos/transaction-risk-go/trainingconfig"
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 	"github.com/digocelos/transaction-risk-go/trainingreport"
@@ -86,6 +87,9 @@ func preparedSelection(t *testing.T, data []byte) PreparedDataset {
 	return dataset
 }
 
+// validationLoss is the mean squared error, computed as training does,
+// through nn.LossValue, so that the compiler rounds the squared difference
+// the same way in both.
 func validationLoss(predictions []evaluation.Prediction) float64 {
 	total := 0.0
 	for _, p := range predictions {
@@ -93,7 +97,7 @@ func validationLoss(predictions []evaluation.Prediction) float64 {
 		if p.Label == trainingdata.Fraud {
 			target = 1
 		}
-		total += (p.Score - target) * (p.Score - target)
+		total += nn.LossValue(nn.MeanSquaredError, p.Score, target)
 	}
 	return total / float64(len(predictions))
 }

@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-An evaluation measures a saved [`pix-risk-model-v1`](pix-risk-model-v1.md) artifact on an explicit scope of a [`pix-training-example-v2`](pix-training-example-v2.md) dataset, and the evaluation report records the result. `cmd/evaluate` and the `modelevaluation` package produce it (ADR 0017).
+An evaluation measures a saved [`pix-risk-model-v2`](pix-risk-model-v2.md) artifact on an explicit scope of a [`pix-training-example-v2`](pix-training-example-v2.md) dataset, and the evaluation report records the result. `cmd/evaluate` and the `modelevaluation` package produce it (ADR 0017).
 
 Evaluation only reads. It never trains, refits the preparation state, selects a checkpoint, or tunes a threshold, and it never changes the artifact or the dataset. It scores the usable records in scope with the artifact's own preparation state and network, so an artifact evaluated on the partitions of its training dataset reproduces the metrics of its [training report](pix-training-report-v2.md) exactly.
 
@@ -14,8 +14,8 @@ The report describes software behavior on the data supplied. Its metrics are not
 
 | Input | Rules |
 |---|---|
-| Model artifact | The exact bytes of a `pix-risk-model-v1` artifact, decoded as strictly as [`pix-risk-model-v1` §2](pix-risk-model-v1.md#2-model-artifact) requires. Its SHA-256 identifies it in the report. |
-| Dataset | A `pix-training-example-v2` dataset, read and classified with `pix-risk-v1` exactly as for training ([`pix-training-example-v2` §9](pix-training-example-v2.md#9-record-classification)). A dataset with any invalid record is not evaluated: the evaluation fails with the dataset report and every diagnostic, and no report is written. |
+| Model artifact | The exact bytes of a `pix-risk-model-v2` artifact, decoded as strictly as [`pix-risk-model-v2` §2](pix-risk-model-v2.md#2-model-artifact) requires. Its SHA-256 identifies it in the report. |
+| Dataset | A `pix-training-example-v2` dataset, read and classified with `pix-risk-v2` exactly as for training ([`pix-training-example-v2` §9](pix-training-example-v2.md#9-record-classification)). A dataset with any invalid record is not evaluated: the evaluation fails with the dataset report and every diagnostic, and no report is written. |
 | Scope | See [section 3](#3-scope). |
 | Threshold override | Optional. A number from 0 to 1 to measure at instead of the artifact's threshold, for this evaluation only. |
 | Reference dataset | Optional. The dataset the model was trained on, to measure group overlap when another dataset is evaluated. Its SHA-256 MUST be the artifact's `dataset_sha256`; otherwise the evaluation fails. |
@@ -45,7 +45,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | Member | Type | Meaning |
 |---|---|---|
 | `evaluation_report_version` | string | `pix-evaluation-report-v1`. |
-| `software` | object | `module`, `version`, and `revision` of the build that evaluated, as in [`pix-risk-model-v1` §2](pix-risk-model-v1.md#2-model-artifact). |
+| `software` | object | `module`, `version`, and `revision` of the build that evaluated, as in [`pix-risk-model-v2` §2](pix-risk-model-v2.md#2-model-artifact). |
 | `model` | object | See [section 5.1](#51-model). |
 | `dataset` | object | The dataset report of the evaluated dataset ([`pix-training-example-v2` §13](pix-training-example-v2.md#13-dataset-report)), covering every record, in scope or not. |
 | `same_dataset_as_training` | boolean | Whether the evaluated dataset's SHA-256 is the artifact's `dataset_sha256`. |
@@ -61,11 +61,11 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 
 | Member | Meaning |
 |---|---|
-| `artifact_version` | `pix-risk-model-v1`. |
+| `artifact_version` | `pix-risk-model-v2`. |
 | `artifact_sha256` | The SHA-256 of the artifact's exact bytes. |
 | `software` | The build that trained the model, from the artifact. |
 | `contracts` | `scoring_input` `pix-payer-input-v2` and `training_example` `pix-training-example-v2`. |
-| `feature_schema` | `pix-risk-v1`. |
+| `feature_schema` | `pix-risk-v2`. |
 | `config_version`, `config_sha256` | The training configuration's version and identity. |
 | `training_report_version`, `training_report_sha256` | The training report's version and the SHA-256 of its exact bytes. |
 | `training_dataset_sha256` | The fingerprint of the training dataset. |

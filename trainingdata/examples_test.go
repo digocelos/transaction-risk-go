@@ -14,7 +14,7 @@ const examplesDir = "../docs/contracts/training-examples-v2"
 // scanReport scans a dataset and builds its dataset report.
 func scanReport(t *testing.T, data []byte) Report {
 	t.Helper()
-	return scanReportWith(t, data, PixRiskV1)
+	return scanReportWith(t, data, PixRiskV2)
 }
 
 // scanReportWith scans a dataset with a feature schema and builds its
@@ -64,7 +64,7 @@ func TestScanSpecificationExamples(t *testing.T) {
 		t.Fatalf("found %d example datasets, want 11", len(datasets))
 	}
 
-	checkExamples(t, datasets, PixRiskV1)
+	checkExamples(t, datasets, PixRiskV2)
 }
 
 // checkExamples compares the dataset report of each example dataset with
@@ -119,7 +119,7 @@ func TestScanRejectsOtherVersions(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		report := scanReportWith(t, []byte(test.data), PixRiskV1)
+		report := scanReportWith(t, []byte(test.data), PixRiskV2)
 
 		want := []Exclusion{{Line: 1, Category: Invalid, Issues: []IssueReference{test.want}}}
 		if !reflect.DeepEqual(report.Exclusions, want) {

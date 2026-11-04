@@ -119,6 +119,9 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, l
 	for i, index := range unexercised {
 		names[i] = descriptor[index].Name
 	}
+	if names == nil {
+		names = []string{}
+	}
 
 	selection.Threshold, err = chooseThreshold(ctx, network, prepared.Validation, config.Threshold)
 	if err != nil {
@@ -154,37 +157,19 @@ func Run(ctx context.Context, dataset io.Reader, config trainingconfig.Config, l
 	return Result{Network: network, State: prepared.State, Report: report, UnexercisedFeatures: names}, nil
 }
 
-// UnexercisedFeatures returns the indices of the features whose value is 0
-// in every usable train record, in descriptor order.
-func UnexercisedFeatures(train []PreparedExample) []int {
-	var unexercised []int
-	for j := 0; j < pixrisk.FeatureCount; j++ {
-		exercised := false
-		for _, example := range train {
-			if example.Values[j] != 0 {
-				exercised = true
-				break
-			}
-		}
-		if !exercised {
-			unexercised = append(unexercised, j)
-		}
-	}
-	return unexercised
-}
-
 // InitialNetwork builds the network a run starts from: the configured
 // architecture, initialized from the configuration's seed and
-// initialization, with the first-layer weights of every unexercised
-// feature set to 0 when the configuration asks for it. It returns the
-// network and the indices of the unexercised features.
-func InitialNetwork(config trainingconfig.Config, train []PreparedExample) (*nn.Network, []int, error) {
+// initialization, with the first-layer weights of every feature the
+// preparation state marks as unexercised set to 0 when the configuration
+// asks for it. It returns the network and the indices of the unexercised
+// features, as the state records them.
+func InitialNetwork(config trainingconfig.Config, state pixrisk.State) (*nn.Network, []int, error) {
 	network, err := nn.NewNetworkWith(config.Seed, nn.Initialization(config.Initialization), config.Sizes()...)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	unexercised := UnexercisedFeatures(train)
+	unexercised := state.Unexercised()
 	if config.ZeroUnexercisedInputs {
 		if err := network.ZeroInputs(unexercised); err != nil {
 			return nil, nil, err
@@ -296,7 +281,7 @@ func train(ctx context.Context, prepared PreparedDataset, config trainingconfig.
 		CheckpointPolicy: config.Checkpoint.Policy,
 	}
 
-	network, unexercised, err := InitialNetwork(config, prepared.Train)
+	network, unexercised, err := InitialNetwork(config, prepared.State)
 	if err != nil {
 		return nil, selection, nil, err
 	}

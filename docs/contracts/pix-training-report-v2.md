@@ -4,7 +4,7 @@
 
 ## 1. Scope
 
-The training report is the JSON document `cmd/train` writes next to a trained model. It records what produced the model and how it was chosen: the configuration and its identity, the dataset report, the partitions, the coverage of populations and availability states, the model selection, and the validation and test metrics. The model artifact binds the report by the SHA-256 of its exact bytes ([`pix-risk-model-v1`](pix-risk-model-v1.md)), and both are published together in a run (ADR 0016).
+The training report is the JSON document `cmd/train` writes next to a trained model. It records what produced the model and how it was chosen: the configuration and its identity, the dataset report, the partitions, the coverage of populations and availability states, the model selection, and the validation and test metrics. The model artifact binds the report by the SHA-256 of its exact bytes ([`pix-risk-model-v2`](pix-risk-model-v2.md)), and both are published together in a run (ADR 0016).
 
 The report describes software behavior on the data supplied. Its metrics are not a claim of detection quality, calibration, or regulatory compliance.
 
@@ -33,7 +33,7 @@ The report is one JSON object, indented with two spaces and followed by a newlin
 | Member | Meaning |
 |---|---|
 | `usable_records` | The number of usable records. |
-| `populations` | For each supported population of [`pix-risk-v1` §14](../features/pix-risk-v1.md#14-supported-populations), the number of records in it: `new_payer_account`, `no_payer_device`, `no_period_limit`, `no_pix_key`, and `no_recipient_account_entry`. A record can be in several. |
+| `populations` | For each supported population of [`pix-risk-v2` §14](../features/pix-risk-v2.md#14-supported-populations), the number of records in it: `new_payer_account`, `no_payer_device`, `no_period_limit`, `no_pix_key`, and `no_recipient_account_entry`. A record can be in several. |
 | `limit_periods` | The number of records with each `payer_limit_period`: `daytime`, `nighttime`, `daily`, and `no_period_limit`. |
 | `sources` | For each optional source, the number of records in each availability state the source can take: `known`, `missing`, `stale`, `not_applicable` for sources a discriminator can rule out, and `zero_limit` for `period_limit`. A member or window missing inside a known DICT group leaves the group `known`. |
 

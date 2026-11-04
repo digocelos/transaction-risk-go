@@ -66,7 +66,7 @@ func Example() {
 	}
 
 	// Output:
-	// scored pix-payer-input-v2 pix-risk-v1
+	// scored pix-payer-input-v2 pix-risk-v2
 	// score from 0 to 1: true
 	// note: /observations/recipient_account/entry missing
 	// note: /pix_payment/recipient_key_usage not_applicable

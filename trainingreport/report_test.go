@@ -74,7 +74,7 @@ func buildReport(t *testing.T, cfg trainingconfig.Config) Report {
 	prepared := map[evaluation.Partition][]pixrisk.Prepared{}
 	var exclusions []trainingdata.Exclusion
 
-	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.PixRiskV1, trainingdata.DefaultMaxRecords,
+	summary, err := trainingdata.Scan(bytes.NewReader(dataset(t)), trainingdata.PixRiskV2, trainingdata.DefaultMaxRecords,
 		func(record trainingdata.Record) error {
 			if exclusion, ok := record.Exclusion(); ok {
 				exclusions = append(exclusions, exclusion)
@@ -233,7 +233,7 @@ func TestMarshalRecordsEveryPart(t *testing.T) {
 		t.Errorf("version = %q", report.Version)
 	case report.Configuration.SHA256 != wantSHA256 || !bytes.Equal(compact.Bytes(), canonical):
 		t.Errorf("configuration = %s %s", report.Configuration.SHA256, report.Configuration.Config)
-	case report.Dataset.FeatureSchema != "pix-risk-v1":
+	case report.Dataset.FeatureSchema != "pix-risk-v2":
 		t.Errorf("dataset feature schema = %q", report.Dataset.FeatureSchema)
 	case train.UsableRecords != 4 || train.Populations["no_payer_device"] != 1 || train.Populations["no_period_limit"] != 1:
 		t.Errorf("train coverage = %+v", train)
