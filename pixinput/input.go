@@ -1,13 +1,13 @@
 // Package pixinput decodes and validates scoring inputs for payer-side Pix
-// analysis, as defined by the pix-payer-input-v2 input contract.
+// analysis, as defined by the pix-payer-input-v3 input contract.
 package pixinput
 
 import "time"
 
-// ContractV2 is the contract version this package supports. Callers state
+// ContractV3 is the contract version this package supports. Callers state
 // which versions they accept, so a later version is never accepted
 // silently (ADR 0006).
-const ContractV2 = "pix-payer-input-v2"
+const ContractV3 = "pix-payer-input-v3"
 
 const (
 	// MaxDocumentSize is the largest scoring input document, in bytes.
@@ -91,7 +91,7 @@ type Observations struct {
 // PeriodLimit is also nil when PayerLimitPeriod is NoPeriodLimit.
 type PayerAccount struct {
 	SettledOutgoingPix90d   *SettledHistory
-	InitiatedOutgoingPix24h *CountObservation
+	InitiatedOutgoingPix24h *InitiatedHistory
 	PeriodLimit             *PeriodLimit
 }
 
@@ -153,6 +153,15 @@ type Registration struct {
 type CountObservation struct {
 	Count int64
 	AsOf  time.Time
+}
+
+// InitiatedHistory is the count and the amount of the Pix payments
+// initiated from the payer account in the 24-hour lookback window.
+// AmountCents is 0 exactly when Count is 0.
+type InitiatedHistory struct {
+	Count       int64
+	AmountCents int64
+	AsOf        time.Time
 }
 
 // AccountEntry mirrors the DICT account data of the recipient.

@@ -1,6 +1,6 @@
 # CSV layout `pix-training-csv-v1`
 
-**Status:** Normative for `pix-training-csv-v1`, implemented by the `trainingcsv` package and `cmd/convert`.
+**Status:** Superseded by [`pix-training-csv-v2`](pix-training-csv-v2.md), which adds one column; `cmd/convert` no longer reads this layout (ADR 0024). This document remains the specification of version 1.
 
 ## 1. Scope
 

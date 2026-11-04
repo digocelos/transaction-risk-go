@@ -1,0 +1,9 @@
+{
+  "issues": [
+    {
+      "path": "/observations/payer_account/period_limit",
+      "code": "member_not_allowed"
+    }
+  ],
+  "status": "invalid_input"
+}

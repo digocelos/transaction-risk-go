@@ -1,4 +1,4 @@
-// Package synthetic generates synthetic pix-training-example-v2 datasets
+// Package synthetic generates synthetic pix-training-example-v3 datasets
 // for measuring the toolkit: valid records with a skewed class balance,
 // fraud that shifts several feature distributions, and the absence
 // patterns of real integrations, such as payments without a Pix key or
@@ -179,7 +179,7 @@ func (g *generator) record(decisionTime time.Time) trainingExample {
 	groupKey := fmt.Sprintf("acct-%07d", g.random.IntN(g.options.Accounts))
 
 	return trainingExample{
-		TrainingExampleVersion: "pix-training-example-v2",
+		TrainingExampleVersion: "pix-training-example-v3",
 		ScoringInput:           input,
 		Outcome:                outcome,
 		GroupKey:               &groupKey,
@@ -227,7 +227,7 @@ func (g *generator) scoringInput(decisionTime time.Time, fraud bool) scoringInpu
 
 	t := times{decision: decisionTime}
 	input := scoringInput{
-		ContractVersion: "pix-payer-input-v2",
+		ContractVersion: "pix-payer-input-v3",
 		DecisionTime:    local.Format("2006-01-02T15:04:05.000-07:00"),
 		PixPayment:      payment,
 	}
@@ -303,9 +303,14 @@ func (g *generator) payerAccount(t times, payment pixPayment, fraud bool) payerA
 		history.MedianAmountCents = &median
 	}
 
-	recent := &countObservation{Count: g.count(1.5), AsOf: t.recent()}
+	recent := &initiatedHistory{Count: g.count(1.5), AsOf: t.recent()}
 	if fraud {
 		recent.Count = g.count(6)
+	}
+	// The amount initiated is the counted payments at amounts like the
+	// payer's; a fraud that splits a transfer initiates many small ones.
+	for i := int64(0); i < recent.Count; i++ {
+		recent.AmountCents += g.logNormal(12_000, 0.8)
 	}
 
 	if g.chance(shareInsufficient) {

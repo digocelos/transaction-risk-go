@@ -35,9 +35,9 @@ type invalidOutput struct {
 const usage = `usage: convert -input FILE.csv -output FILE.jsonl [-separator ,|;]
                [-replace] [-max-records N]
 
-Converts training data in the pix-training-csv-v1 layout, such as a filled
-copy of templates/training-data/pix-training-example-v2.csv, into the
-pix-training-example-v2 JSON Lines dataset that train and evaluate read.
+Converts training data in the pix-training-csv-v2 layout, such as a filled
+copy of templates/training-data/pix-training-example-v3.csv, into the
+pix-training-example-v3 JSON Lines dataset that train and evaluate read.
 Every row is validated as train would validate it; the dataset is written,
 atomically, only when every row is valid. An existing output is replaced
 only with -replace. Keep files with real data in data/, which git ignores.
@@ -67,7 +67,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprint(stderr, usage+"\n")
 		fs.PrintDefaults()
 	}
-	fs.StringVar(&input, "input", "", "CSV `file` in the pix-training-csv-v1 layout")
+	fs.StringVar(&input, "input", "", "CSV `file` in the pix-training-csv-v2 layout")
 	fs.StringVar(&output, "output", "", "JSON Lines `file` to write")
 	fs.StringVar(&separator, "separator", ",", "cell `separator`: , or ;")
 	fs.BoolVar(&replace, "replace", false, "replace an existing output file")

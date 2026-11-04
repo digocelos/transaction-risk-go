@@ -1,6 +1,6 @@
 # Input contract `pix-payer-input-v2`
 
-**Status:** Normative for `pix-payer-input-v2`. It replaces [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history.
+**Status:** Superseded by [`pix-payer-input-v3`](pix-payer-input-v3.md), which adds the amount initiated in 24 hours; the toolkit no longer accepts `pix-payer-input-v2` documents (ADR 0024). This document remains the specification of version 2, and version 3 is defined as its differences from it. It replaces [`pix-payer-input-v1`](https://github.com/digocelos/transaction-risk-go/blob/6babe7c124a26d1c2426ef4b55b2b6c338724b5d/docs/contracts/pix-payer-input-v1.md) (ADR 0013), which was removed with the educational workflow (ADR 0020) and remains in the repository history.
 
 ## 1. Scope
 

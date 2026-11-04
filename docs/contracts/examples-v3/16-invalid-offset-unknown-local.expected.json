@@ -1,0 +1,9 @@
+{
+  "issues": [
+    {
+      "path": "/pix_payment/reference_time_offset",
+      "code": "invalid_format"
+    }
+  ],
+  "status": "invalid_input"
+}

@@ -2,7 +2,7 @@ package synthetic
 
 import "encoding/json"
 
-// The types below encode pix-training-example-v2 records. A pointer is
+// The types below encode pix-training-example-v3 records. A pointer is
 // null when it is nil; a conditional subject is omitted when nil.
 
 type trainingExample struct {
@@ -44,7 +44,7 @@ type observations struct {
 
 type payerAccount struct {
 	SettledOutgoingPix90d   *settledHistory          `json:"settled_outgoing_pix_90d"`
-	InitiatedOutgoingPix24h *countObservation        `json:"initiated_outgoing_pix_24h"`
+	InitiatedOutgoingPix24h *initiatedHistory        `json:"initiated_outgoing_pix_24h"`
 	PeriodLimit             conditional[periodLimit] `json:"period_limit,omitzero"`
 }
 
@@ -68,6 +68,12 @@ type settledHistory struct {
 type countObservation struct {
 	Count int64  `json:"count"`
 	AsOf  string `json:"as_of"`
+}
+
+type initiatedHistory struct {
+	Count       int64  `json:"count"`
+	AmountCents int64  `json:"amount_cents"`
+	AsOf        string `json:"as_of"`
 }
 
 type periodLimit struct {

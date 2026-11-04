@@ -13,7 +13,7 @@ import (
 
 const usage = `usage: synthesize -records N -seed S [-fraud-rate R] > dataset.jsonl
 
-Writes a synthetic pix-training-example-v2 dataset to standard output, for
+Writes a synthetic pix-training-example-v3 dataset to standard output, for
 measuring and trying the toolkit at realistic sizes. Records have skewed
 labels, fraud that shifts several features, and the absence patterns of
 real integrations. The same flags always write the same bytes.

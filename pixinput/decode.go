@@ -113,7 +113,7 @@ func checkContractVersion(root *strictjson.Value, versions []string) (string, *s
 		return "", &strictjson.Issue{Path: path, Code: CodeNullNotAllowed, Message: "contract_version must not be null"}
 	case value.Kind != strictjson.KindString:
 		return "", &strictjson.Issue{Path: path, Code: CodeWrongType, Message: "contract_version must be a string"}
-	case !slices.Contains(versions, value.Text) || value.Text != ContractV2:
+	case !slices.Contains(versions, value.Text) || value.Text != ContractV3:
 		return "", &strictjson.Issue{
 			Path:    path,
 			Code:    CodeUnsupportedContractVersion,
@@ -328,7 +328,7 @@ func (d *decoder) payerAccount(path string, parent *strictjson.Value, payment Pi
 
 	return PayerAccount{
 		SettledOutgoingPix90d:   d.settledHistory(subjectPath, object, "settled_outgoing_pix_90d"),
-		InitiatedOutgoingPix24h: d.countObservation(subjectPath, object, "initiated_outgoing_pix_24h"),
+		InitiatedOutgoingPix24h: d.initiatedHistory(subjectPath, object, "initiated_outgoing_pix_24h"),
 		PeriodLimit: conditionalMember(d, subjectPath, object, "period_limit",
 			"payer_limit_period", string(payment.PayerLimitPeriod), payment.PayerLimitPeriod != NoPeriodLimit,
 			d.periodLimit),
@@ -450,6 +450,30 @@ func (d *decoder) settledHistory(path string, parent *strictjson.Value, name str
 	}
 
 	return history
+}
+
+// initiatedHistory reads the 24-hour initiated history: a count, the sum
+// of the amounts counted, which is 0 exactly when the count is 0, and an
+// as_of.
+func (d *decoder) initiatedHistory(path string, parent *strictjson.Value, name string) *InitiatedHistory {
+	object, observationPath := d.ObjectMember(path, parent, name, true, "count", "amount_cents", "as_of")
+	if object == nil {
+		return nil
+	}
+
+	count, countState := d.Integer(observationPath, object, "count", 0, false)
+	amount, amountState := d.Integer(observationPath, object, "amount_cents", 0, false)
+
+	if countState == strictjson.Valid && amountState == strictjson.Valid && (count == 0) != (amount == 0) {
+		d.Add(strictjson.Pointer(observationPath, "amount_cents"), CodeAmountCountMismatch,
+			"amount_cents must be 0 exactly when count is 0")
+	}
+
+	return &InitiatedHistory{
+		Count:       count,
+		AmountCents: amount,
+		AsOf:        d.asOfValue(observationPath, object),
+	}
 }
 
 func (d *decoder) countObservation(path string, parent *strictjson.Value, name string) *CountObservation {

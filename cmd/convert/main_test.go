@@ -13,7 +13,7 @@ import (
 	"github.com/digocelos/transaction-risk-go/trainingdata"
 )
 
-const template = "../../templates/training-data/pix-training-example-v2.csv"
+const template = "../../templates/training-data/pix-training-example-v3.csv"
 
 type result struct {
 	code   int

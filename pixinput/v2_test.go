@@ -7,7 +7,7 @@ import (
 )
 
 func TestDecodeV2ReadsNewMembers(t *testing.T) {
-	input, err := Decode(readExample(t, "01-complete.json"), ContractV2)
+	input, err := Decode(readExample(t, "01-complete.json"), ContractV3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -17,7 +17,7 @@ func TestDecodeV2ReadsNewMembers(t *testing.T) {
 	observations := input.Observations
 
 	switch {
-	case input.ContractVersion != ContractV2:
+	case input.ContractVersion != ContractV3:
 		t.Errorf("ContractVersion = %q", input.ContractVersion)
 	case payment.ReferenceTimeOffsetMinutes != -180:
 		t.Errorf("ReferenceTimeOffsetMinutes = %d, want -180", payment.ReferenceTimeOffsetMinutes)
@@ -47,7 +47,7 @@ func TestDecodeV2ReferenceTimeOffset(t *testing.T) {
 	}
 
 	for offset, minutes := range valid {
-		input, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": offset}), ContractV2)
+		input, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": offset}), ContractV3)
 		if err != nil {
 			t.Errorf("%s: Decode() error = %v", offset, err)
 			continue
@@ -73,13 +73,13 @@ func TestDecodeV2ReferenceTimeOffset(t *testing.T) {
 	}
 
 	for offset, code := range invalid {
-		_, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": offset}), ContractV2)
+		_, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": offset}), ContractV3)
 		if got, want := issuesOf(t, err), []pathCode{{path, code}}; !reflect.DeepEqual(got, want) {
 			t.Errorf("%q: issues = %v, want %v", offset, got, want)
 		}
 	}
 
-	_, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": -180}), ContractV2)
+	_, err := Decode(edit(t, map[string]any{"pix_payment/reference_time_offset": -180}), ContractV3)
 	if got, want := issuesOf(t, err), []pathCode{{path, "wrong_type"}}; !reflect.DeepEqual(got, want) {
 		t.Errorf("number: issues = %v, want %v", got, want)
 	}
@@ -143,7 +143,7 @@ func TestDecodeV2ReportsIssues(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := Decode(test.input, ContractV2)
+			_, err := Decode(test.input, ContractV3)
 
 			if got := issuesOf(t, err); !reflect.DeepEqual(got, test.want) {
 				t.Errorf("issues = %v\nwant     %v", got, test.want)
@@ -164,12 +164,12 @@ func TestDecodeV2AcceptsKnownFactsAndMissingObservations(t *testing.T) {
 	}
 
 	for name, changes := range tests {
-		if _, err := Decode(edit(t, changes), ContractV2); err != nil {
+		if _, err := Decode(edit(t, changes), ContractV3); err != nil {
 			t.Errorf("%s: Decode() error = %v", name, err)
 		}
 	}
 
-	input, err := Decode(edit(t, tests["missing registration"]), ContractV2)
+	input, err := Decode(edit(t, tests["missing registration"]), ContractV3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,8 +189,8 @@ func TestDecodeAcceptsOnlyRequestedVersions(t *testing.T) {
 		versions []string
 		valid    bool
 	}{
-		{"v2 as v2", v2, []string{ContractV2}, true},
-		{"retired v1", retired, []string{ContractV2}, false},
+		{"v2 as v2", v2, []string{ContractV3}, true},
+		{"retired v1", retired, []string{ContractV3}, false},
 		{"retired v1 requested by the caller", retired, []string{"pix-payer-input-v1"}, false},
 		{"no version accepted", v2, nil, false},
 	}
